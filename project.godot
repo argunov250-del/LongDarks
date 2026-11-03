@@ -16,6 +16,10 @@ window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation=6
 
+[autoload]
+
+SimRunner="*res://src/core/sim_runner.gd"
+
 [rendering]
 
 renderer/rendering_method="mobile"
