@@ -1,0 +1,12 @@
+.godot/
+.import/
+*.apk
+*.aab
+*.idsig
+build/
+export/
+builds/
+*.keystore
+*.jks
+export_credentials.cfg
+.mono/
