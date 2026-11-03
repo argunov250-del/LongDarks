@@ -1,0 +1,171 @@
+class_name WorldView
+extends Node3D
+## Отрисовка WorldMap: low-poly рельеф с плоскими гранями, вода, декор через MultiMesh.
+
+var map: WorldMap
+var terrain_vertex_count := 0
+
+const COLORS := {
+	WorldMap.Terrain.GROUND: Color(0.50, 0.46, 0.34),
+	WorldMap.Terrain.RIVER: Color(0.22, 0.27, 0.30),
+	WorldMap.Terrain.LAKE: Color(0.20, 0.25, 0.29),
+	WorldMap.Terrain.FOREST: Color(0.27, 0.34, 0.24),
+	WorldMap.Terrain.RUINS: Color(0.40, 0.38, 0.36),
+	WorldMap.Terrain.POISON: Color(0.52, 0.55, 0.20),
+}
+const SNOW := Color(0.90, 0.93, 0.97)
+
+
+func build(world_map: WorldMap) -> void:
+	map = world_map
+	for c in get_children():
+		c.queue_free()
+	_build_terrain()
+	_build_water()
+	_build_props()
+
+
+func _snow_amount(t: int, h: float, cx: int, cz: int) -> float:
+	var base := 0.55
+	match t:
+		WorldMap.Terrain.FOREST: base = 0.30
+		WorldMap.Terrain.POISON: base = 0.05
+		WorldMap.Terrain.RUINS: base = 0.35
+		WorldMap.Terrain.RIVER, WorldMap.Terrain.LAKE: return 0.0
+	return clampf(base + h * 0.02 + (map.hash01(cx, cz, 5) - 0.5) * 0.25, 0.0, 0.9)
+
+
+func _build_terrain() -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var n := map.size
+	var cs := map.cell_size
+	for cz in n:
+		for cx in n:
+			var t := map.cell_type(cx, cz)
+			var p00 := Vector3(cx * cs, map.node_height(cx, cz), cz * cs)
+			var p10 := Vector3((cx + 1) * cs, map.node_height(cx + 1, cz), cz * cs)
+			var p01 := Vector3(cx * cs, map.node_height(cx, cz + 1), (cz + 1) * cs)
+			var p11 := Vector3((cx + 1) * cs, map.node_height(cx + 1, cz + 1), (cz + 1) * cs)
+			var avg := (p00.y + p10.y + p01.y + p11.y) * 0.25
+			var base: Color = COLORS[t]
+			var col := base.lerp(SNOW, _snow_amount(t, avg, cx, cz))
+			var shade := 0.94 + map.hash01(cx, cz, 1) * 0.12
+			col = Color(col.r * shade, col.g * shade, col.b * shade)
+			# Диагональ выбирается по перепаду высот — меньше артефактов.
+			var tris: Array
+			if absf(p00.y - p11.y) < absf(p10.y - p01.y):
+				tris = [p00, p11, p01, p00, p10, p11]
+			else:
+				tris = [p00, p10, p01, p10, p11, p01]
+			for v: Vector3 in tris:
+				st.set_color(col)
+				st.add_vertex(v)
+	terrain_vertex_count = n * n * 6
+	st.generate_normals()  # без индексов => плоское затенение
+	var mi := MeshInstance3D.new()
+	mi.name = "Terrain"
+	mi.mesh = st.commit()
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.roughness = 1.0
+	mi.material_override = mat
+	add_child(mi)
+
+
+func _build_water() -> void:
+	var ws := map.get_world_size()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(ws, ws)
+	var mi := MeshInstance3D.new()
+	mi.name = "Water"
+	mi.mesh = pm
+	mi.position = Vector3(ws * 0.5, WorldMap.WATER_LEVEL - 0.05, ws * 0.5)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.30, 0.45, 0.55, 0.85)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.roughness = 0.25
+	mi.material_override = mat
+	add_child(mi)
+
+
+func _make_multimesh(node_name: String, mesh: Mesh, color: Color, xforms: Array[Transform3D]) -> void:
+	if xforms.is_empty():
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = xforms.size()
+	for i in xforms.size():
+		mm.set_instance_transform(i, xforms[i])
+	var mi := MultiMeshInstance3D.new()
+	mi.name = node_name
+	mi.multimesh = mm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 1.0
+	mi.material_override = mat
+	add_child(mi)
+
+
+func _build_props() -> void:
+	var trees: Array[Transform3D] = []
+	var rocks: Array[Transform3D] = []
+	var blocks: Array[Transform3D] = []
+	var cs := map.cell_size
+	for cz in map.size:
+		for cx in map.size:
+			var t := map.cell_type(cx, cz)
+			var jx := map.hash01(cx, cz, 11)
+			var jz := map.hash01(cx, cz, 12)
+			var x := (cx + 0.2 + jx * 0.6) * cs
+			var z := (cz + 0.2 + jz * 0.6) * cs
+			var y := map.height_at(x, z)
+			match t:
+				WorldMap.Terrain.FOREST:
+					for k in 2:
+						var tx := x + (map.hash01(cx, cz, 20 + k) - 0.5) * cs * 0.7
+						var tz := z + (map.hash01(cx, cz, 30 + k) - 0.5) * cs * 0.7
+						var s := 0.8 + map.hash01(cx, cz, 40 + k) * 0.7
+						var b := Basis.from_scale(Vector3(s, s, s))
+						trees.append(Transform3D(b, Vector3(tx, map.height_at(tx, tz) + 1.5 * s, tz)))
+				WorldMap.Terrain.GROUND, WorldMap.Terrain.POISON:
+					if map.hash01(cx, cz, 50) < 0.06:
+						var s := 0.4 + map.hash01(cx, cz, 51) * 0.6
+						var b := Basis.from_euler(Vector3(0, jx * TAU, 0)).scaled(Vector3(s * 1.3, s, s))
+						rocks.append(Transform3D(b, Vector3(x, y + s * 0.3, z)))
+				WorldMap.Terrain.RUINS:
+					var w := 1.0 + map.hash01(cx, cz, 60) * 0.8
+					var hgt := 0.8 + map.hash01(cx, cz, 61) * 2.2
+					var b := Basis.from_euler(Vector3(0, (jx - 0.5) * 0.6, 0)).scaled(Vector3(w, hgt, w))
+					blocks.append(Transform3D(b, Vector3((cx + 0.5) * cs, y + hgt * 0.5 - 0.1, (cz + 0.5) * cs)))
+	# Заводское здание и труба в центре.
+	var fc := map.factory_cell
+	var fp := map.cell_center(fc.x, fc.y)
+	blocks.append(Transform3D(Basis.from_scale(Vector3(5.0, 5.0, 3.5)), fp + Vector3(0, 2.4, 0)))
+	var chim: Array[Transform3D] = [Transform3D(Basis.from_scale(Vector3(1.0, 9.0, 1.0)), fp + Vector3(3.2, 4.5, 1.0))]
+
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.0
+	cone.bottom_radius = 0.7
+	cone.height = 3.0
+	cone.radial_segments = 5
+	cone.rings = 1
+	_make_multimesh("Trees", cone, Color(0.18, 0.28, 0.20).lerp(SNOW, 0.25), trees)
+
+	var rock := SphereMesh.new()
+	rock.radial_segments = 5
+	rock.rings = 3
+	rock.radius = 0.5
+	rock.height = 1.0
+	_make_multimesh("Rocks", rock, Color(0.45, 0.45, 0.45), rocks)
+
+	_make_multimesh("Ruins", BoxMesh.new(), Color(0.42, 0.40, 0.38), blocks)
+
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.4
+	cyl.bottom_radius = 0.5
+	cyl.height = 1.0
+	cyl.radial_segments = 6
+	cyl.rings = 1
+	_make_multimesh("Chimney", cyl, Color(0.33, 0.30, 0.28), chim)
