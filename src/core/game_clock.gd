@@ -67,3 +67,21 @@ func get_hour() -> float:
 ## Для загрузки/тестов: задать абсолютное время в секундах.
 func set_total_seconds(seconds: float) -> void:
 	_total_usec = maxi(0, roundi(seconds * USEC))
+
+
+## 64-битные значения — строками (JSON хранит числа как float).
+func to_dict() -> Dictionary:
+	return {
+		"total_usec": str(_total_usec),
+		"speed": _speed,
+		"day_length_usec": str(day_length_usec),
+	}
+
+
+func from_dict(d: Dictionary) -> void:
+	if d.has("total_usec"):
+		_total_usec = maxi(0, SaveManager.to_int(d["total_usec"], _total_usec))
+	if d.has("day_length_usec"):
+		day_length_usec = maxi(1, SaveManager.to_int(d["day_length_usec"], day_length_usec))
+	if d.has("speed"):
+		set_speed(SaveManager.to_int(d["speed"], _speed))

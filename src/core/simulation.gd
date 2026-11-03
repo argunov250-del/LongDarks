@@ -60,3 +60,40 @@ func advance(real_delta: float) -> int:
 	if steps == MAX_STEPS_PER_ADVANCE:
 		_acc_usec = 0  # защита от спирали смерти
 	return steps
+
+
+## Полный снимок состояния. Незнакомые ключи при загрузке игнорируются,
+## отсутствующие оставляют значения по умолчанию.
+func to_dict() -> Dictionary:
+	var systems := {}
+	for s in _systems:
+		var key := s.get_save_key()
+		if key != &"":
+			systems[String(key)] = s.save_state()
+	return {
+		"clock": clock.to_dict(),
+		"tick_count": str(tick_count),
+		"acc_usec": str(_acc_usec),
+		"rng_seed": str(rng.seed),
+		"rng_state": str(rng.state),
+		"systems": systems,
+	}
+
+
+func from_dict(d: Dictionary) -> void:
+	if d.get("clock") is Dictionary:
+		clock.from_dict(d["clock"])
+	if d.has("tick_count"):
+		tick_count = SaveManager.to_int(d["tick_count"], tick_count)
+	if d.has("acc_usec"):
+		_acc_usec = SaveManager.to_int(d["acc_usec"], _acc_usec)
+	# Сначала seed, затем state (установка seed сбрасывает state).
+	if d.has("rng_seed"):
+		rng.seed = SaveManager.to_int(d["rng_seed"], rng.seed)
+	if d.has("rng_state"):
+		rng.state = SaveManager.to_int(d["rng_state"], rng.state)
+	var saved: Dictionary = d["systems"] if d.get("systems") is Dictionary else {}
+	for s in _systems:
+		var key := String(s.get_save_key())
+		if key != "" and saved.get(key) is Dictionary:
+			s.load_state(saved[key])
