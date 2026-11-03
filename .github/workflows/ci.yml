@@ -73,10 +73,20 @@ jobs:
       - name: Verify APK is launchable
         run: |
           AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt2"
-          "$AAPT" dump badging build/longdarks-debug.apk > badging.txt
-          grep -E "^(package:|launchable-activity|application-label:|sdkVersion|minSdkVersion|targetSdkVersion|native-code)" badging.txt
-          if ! grep -q "^launchable-activity" badging.txt; then
-            echo "::error::APK has no launchable-activity (no launcher icon)"
+          "$AAPT" dump badging build/longdarks-debug.apk > badging.txt 2>&1 || true
+          grep -E "^(package:|application-label:|sdkVersion|minSdkVersion|targetSdkVersion|native-code)" badging.txt
+          # Godot's Android template declares its launcher as an <activity-alias>
+          # (GodotAppLauncher) with MAIN/LAUNCHER, which `badging` never reports as
+          # launchable-activity. Check the manifest for the alias intent-filter instead.
+          "$AAPT" dump xmltree --file AndroidManifest.xml build/longdarks-debug.apk > manifest.txt 2>&1
+          if grep -q "^launchable-activity" badging.txt; then
+            echo "launchable-activity present"
+          elif awk '/E: activity-alias/{a=1} a&&/android.intent.action.MAIN/{m=1} a&&/android.intent.category.LAUNCHER/{l=1} /E: (meta-data|receiver|provider|service)/{if(a)a=0} END{exit !(m&&l)}' manifest.txt \
+               && grep -q 'android:exported.*=true' manifest.txt; then
+            echo "Launcher activity-alias with MAIN/LAUNCHER found"
+            grep -A12 "E: activity-alias" manifest.txt
+          else
+            echo "::error::APK has no launcher entry (no launcher icon)"
             exit 1
           fi
       - uses: actions/upload-artifact@v6
