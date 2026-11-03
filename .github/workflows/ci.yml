@@ -70,6 +70,15 @@ jobs:
           mkdir -p build
           godot --headless --path . --export-debug Android build/longdarks-debug.apk
           test -s build/longdarks-debug.apk
+      - name: Verify APK is launchable
+        run: |
+          AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt2"
+          "$AAPT" dump badging build/longdarks-debug.apk > badging.txt
+          grep -E "^(package:|launchable-activity|application-label:|sdkVersion|minSdkVersion|targetSdkVersion|native-code)" badging.txt
+          if ! grep -q "^launchable-activity" badging.txt; then
+            echo "::error::APK has no launchable-activity (no launcher icon)"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v6
         with:
           name: longdarks-debug-apk
