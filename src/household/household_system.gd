@@ -8,7 +8,8 @@ extends RefCounted
 ##
 ## Шаг 11: отопление (печь жжёт дрова, тепло дома), хуки outdoor_cold/consumption_multiplier.
 ## API (еда/отопление): house_has_food(id), canteen_for(villager),
-## stove_demand(id) (хук отопления: heating_needed), HouseholdDefs.garden_season_allows (хук сезонов).
+## stove_demand(id) (heating_needed выставляет SeasonSystem: печи топят при <= +5 °C),
+## HouseholdDefs.garden_season_allows (календарь огорода по сезону).
 
 const TOPIC_CHANGED := &"household_changed"
 
@@ -23,6 +24,8 @@ var outdoor_cold: float = NeedsDefs.DEFAULT_OUTDOOR_COLD
 var consumption_multiplier: float = 1.0
 ## Отопление и расход дров идут (тесты старых шагов отключают).
 var simulate_heat: bool = true
+## Календарь (шаг 13): null — сезонов нет, огород без ограничений (старые тесты).
+var seasons: SeasonSystem = null
 
 var _sim: Simulation
 
@@ -238,14 +241,19 @@ func canteen_for(v: Villager) -> int:
 
 # ---------- огород ----------
 
-func can_plant(id: int, day: int = 0) -> bool:
-	var h := home(id)
-	return h != null and h.garden_state == Household.GARDEN_EMPTY and HouseholdDefs.garden_season_allows(day, &"plant")
+## Текущий сезон для огорода (&"" — календаря нет).
+func current_season() -> StringName:
+	return seasons.season() if seasons != null else &""
 
 
-func can_harvest(id: int, day: int = 0) -> bool:
+func can_plant(id: int, _day: int = 0) -> bool:
 	var h := home(id)
-	return h != null and h.garden_state == Household.GARDEN_RIPE and HouseholdDefs.garden_season_allows(day, &"harvest") and h.food.free_space() > 0
+	return h != null and h.garden_state == Household.GARDEN_EMPTY and HouseholdDefs.garden_season_allows(current_season(), &"plant")
+
+
+func can_harvest(id: int, _day: int = 0) -> bool:
+	var h := home(id)
+	return h != null and h.garden_state == Household.GARDEN_RIPE and HouseholdDefs.garden_season_allows(current_season(), &"harvest") and h.food.free_space() > 0
 
 
 func plant(id: int) -> bool:
@@ -319,11 +327,12 @@ func tick(sim: Simulation, dt: float) -> void:
 	if dt <= 0.0:
 		return
 	sync()
-	var day := sim.clock.get_day()
-	var days := dt / (float(sim.clock.day_length_usec) / GameClock.USEC)
+	var season := current_season()
+	var days := dt / sim.clock.rate_day_seconds()
+	var cold_store := economy != null and economy.ambient_cold  # на холоде еда не портится
 	for id in homes:
 		var h: Household = homes[id]
-		if h.garden_state == Household.GARDEN_GROWING and HouseholdDefs.garden_season_allows(day, &"grow"):
+		if h.garden_state == Household.GARDEN_GROWING and HouseholdDefs.garden_season_allows(season, &"grow"):
 			h.garden_progress += dt
 			if h.garden_progress >= HouseholdDefs.GARDEN_GROW_TIME:
 				h.garden_state = Household.GARDEN_RIPE
@@ -334,11 +343,13 @@ func tick(sim: Simulation, dt: float) -> void:
 				h.egg_acc -= HouseholdDefs.EGG_PERIOD
 			if h.milk_acc >= HouseholdDefs.MILK_PERIOD and h.food.add(&"milk", 1) > 0:
 				h.milk_acc -= HouseholdDefs.MILK_PERIOD
-		h.food.spoil(days)
+		if not cold_store:
+			h.food.spoil(days)
 		if simulate_heat:
 			_tick_heat(id, h, days)
-	for id in canteens:
-		(canteens[id] as Household).food.spoil(days)
+	if not cold_store:
+		for id in canteens:
+			(canteens[id] as Household).food.spoil(days)
 
 
 ## Печь жжёт дрова из своего запаса, дом греется к цели или остывает.

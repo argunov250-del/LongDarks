@@ -7,6 +7,7 @@ const Env = preload("res://tests/villagers/villager_env.gd")
 func _env(hour: float = 10.0, day_len: float = 400.0) -> Env:
 	var e := Env.new(5000, {})
 	e.sim.clock.set_day_length(day_len)
+	e.sim.clock.set_rate_day_length(day_len)
 	e.enable_needs(hour)
 	return e
 
@@ -240,6 +241,7 @@ func test_homeless_sleep_is_worse_and_tiredness_grows_while_working() -> void:
 	# усталость на работе
 	var e3 := Env.new(5000, {&"logs": 40, &"planks": 40, &"stone": 40})
 	e3.sim.clock.set_day_length(400.0)
+	e3.sim.clock.set_rate_day_length(400.0)
 	e3.enable_needs(9.0)
 	var b := e3.place_near_hub(&"dugout", 8.0, 0.0)
 	var w := e3.hero()

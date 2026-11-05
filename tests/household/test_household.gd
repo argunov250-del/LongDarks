@@ -88,8 +88,9 @@ func test_garden_yields_into_house_stock() -> void:
 
 
 func test_garden_season_hook_exists() -> void:
-	assert_true(HouseholdDefs.garden_season_allows(1, &"plant"))
-	assert_true(HouseholdDefs.garden_season_allows(100, &"harvest"))
+	# нет календаря (&"") — огород без ограничений; по сезонам — tests/seasons
+	assert_true(HouseholdDefs.garden_season_allows(&"", &"plant"))
+	assert_true(HouseholdDefs.garden_season_allows(&"", &"harvest"))
 
 
 func test_barn_is_built_in_stages_then_gives_eggs_and_milk() -> void:

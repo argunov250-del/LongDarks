@@ -4,18 +4,36 @@ extends RefCounted
 ## Скорость: 0 (пауза), 1, 2, 3.
 
 const SPEEDS: Array[int] = [0, 1, 2, 3]
-## Длина игровых суток в реальных секундах при скорости 1.
-## HOOK (сезоны): позже заменить на day_length_for(day) / таблицу по сезонам.
-const DEFAULT_DAY_LENGTH := 1440.0
+## Длина игровых суток в реальных секундах при скорости 1 (шаг 13: константа, 150 с).
+## Суточный цикл (день/ночь, сон, усталость) привязан к ней.
+const DEFAULT_DAY_LENGTH := 150.0
+## «Сутки скоростей» — опорная длина, к которой привязаны ВСЕ расходные «в сутки» скорости
+## (голод, жажда, тепло, здоровье, дрова, порча, прогрев дома). Они остаются «на секунду»
+## как до шага 13, поэтому сокращение суток цикла не ломает баланс. Не путать с day_length.
+const RATE_DAY_LENGTH := 1440.0
 const USEC := 1000000
 
 var day_length_usec: int = roundi(DEFAULT_DAY_LENGTH * USEC)
+var rate_day_usec: int = roundi(RATE_DAY_LENGTH * USEC)
 var _speed: int = 1
 var _total_usec: int = 0
 
 
 func set_day_length(seconds: float) -> void:
 	day_length_usec = maxi(1, roundi(seconds * USEC))
+
+
+## Тесты ускоряют расход: сутки скоростей короче.
+func set_rate_day_length(seconds: float) -> void:
+	rate_day_usec = maxi(1, roundi(seconds * USEC))
+
+
+func rate_day_seconds() -> float:
+	return float(rate_day_usec) / USEC
+
+
+func day_seconds() -> float:
+	return float(day_length_usec) / USEC
 
 
 ## Возвращает false и не меняет скорость, если значение недопустимо.
@@ -75,6 +93,7 @@ func to_dict() -> Dictionary:
 		"total_usec": str(_total_usec),
 		"speed": _speed,
 		"day_length_usec": str(day_length_usec),
+		"rate_day_usec": str(rate_day_usec),
 	}
 
 
@@ -83,5 +102,7 @@ func from_dict(d: Dictionary) -> void:
 		_total_usec = maxi(0, SaveManager.to_int(d["total_usec"], _total_usec))
 	if d.has("day_length_usec"):
 		day_length_usec = maxi(1, SaveManager.to_int(d["day_length_usec"], day_length_usec))
+	if d.has("rate_day_usec"):
+		rate_day_usec = maxi(1, SaveManager.to_int(d["rate_day_usec"], rate_day_usec))
 	if d.has("speed"):
 		set_speed(SaveManager.to_int(d["speed"], _speed))

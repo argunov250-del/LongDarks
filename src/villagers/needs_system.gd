@@ -24,8 +24,14 @@ func is_night() -> bool:
 	return NeedsDefs.is_night(hour())
 
 
+## Сутки цикла (день/ночь, сон, усталость).
 func day_seconds() -> float:
-	return float(vs._sim.clock.day_length_usec) / GameClock.USEC if vs._sim != null else GameClock.DEFAULT_DAY_LENGTH
+	return vs._sim.clock.day_seconds() if vs._sim != null else GameClock.DEFAULT_DAY_LENGTH
+
+
+## «Сутки скоростей» (голод, жажда, тепло, здоровье, болезни): не зависят от длины суток цикла.
+func rate_day_seconds() -> float:
+	return vs._sim.clock.rate_day_seconds() if vs._sim != null else GameClock.RATE_DAY_LENGTH
 
 
 static func is_need_kind(kind: StringName) -> bool:
@@ -147,7 +153,8 @@ func _stoker_busy(id: int, me: Villager) -> bool:
 func tick(dt: float) -> void:
 	if dt <= 0.0:
 		return
-	var days := dt / day_seconds()
+	var days := dt / rate_day_seconds()
+	var cycle_days := dt / day_seconds()
 	_home_acc += dt
 	if _home_acc >= NeedsDefs.HOME_ASSIGN_INTERVAL:
 		_home_acc = 0.0
@@ -161,10 +168,10 @@ func tick(dt: float) -> void:
 	for v: Villager in vs.villagers.values():
 		if v.arriving:
 			continue
-		_tick_one(v, dt, days, staff)
+		_tick_one(v, dt, days, cycle_days, staff)
 
 
-func _tick_one(v: Villager, dt: float, days: float, staff: Dictionary) -> void:
+func _tick_one(v: Villager, dt: float, days: float, cycle_days: float, staff: Dictionary) -> void:
 	var hs := vs.household
 	var mult := hs.consumption_multiplier
 	var cold := hs.outdoor_cold
@@ -182,10 +189,10 @@ func _tick_one(v: Villager, dt: float, days: float, staff: Dictionary) -> void:
 	v.set_need(NeedsDefs.WARMTH, move_toward(w, amb, wrate * days))
 	if resting:
 		var k := 1.0 if v.home_id > 0 and (at_home(v) or kind == &"heal") else NeedsDefs.HOMELESS_REST_MULT
-		v.set_need(NeedsDefs.REST, v.need(NeedsDefs.REST) + NeedsDefs.SLEEP_RESTORE_PER_DAY * k * days)
+		v.set_need(NeedsDefs.REST, v.need(NeedsDefs.REST) + NeedsDefs.SLEEP_RESTORE_PER_DAY * k * cycle_days)
 	else:
 		var working := v.at_site and not is_need_kind(kind) and not v.task.is_empty()
-		v.set_need(NeedsDefs.REST, v.need(NeedsDefs.REST) - (NeedsDefs.REST_DECAY_WORK if working else NeedsDefs.REST_DECAY_IDLE) * days)
+		v.set_need(NeedsDefs.REST, v.need(NeedsDefs.REST) - (NeedsDefs.REST_DECAY_WORK if working else NeedsDefs.REST_DECAY_IDLE) * cycle_days)
 	# здоровье
 	var hp := v.need(NeedsDefs.HEALTH)
 	var drain := 0.0
@@ -218,7 +225,7 @@ func _tick_one(v: Villager, dt: float, days: float, staff: Dictionary) -> void:
 		v.sick_acc += dt
 		if v.sick_acc >= NeedsDefs.SICK_ROLL_INTERVAL:
 			v.sick_acc -= NeedsDefs.SICK_ROLL_INTERVAL
-			var p := 1.0 - exp(-NeedsDefs.sick_rate_per_day(v.needs) * NeedsDefs.SICK_ROLL_INTERVAL / day_seconds())
+			var p := 1.0 - exp(-NeedsDefs.sick_rate_per_day(v.needs) * NeedsDefs.SICK_ROLL_INTERVAL / rate_day_seconds())
 			if vs._rng().randf() < p:
 				fall_sick(v)
 

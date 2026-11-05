@@ -4,6 +4,8 @@ extends Node3D
 const DEFAULT_WORLD_SEED := 20260401
 
 var world_map: WorldMap
+var seasons: SeasonSystem
+var season_visuals: SeasonVisuals
 var world_view: WorldView
 var economy: EconomySystem
 var construction: ConstructionSystem
@@ -13,20 +15,16 @@ var villagers_view: VillagersView
 var buildings_view: BuildingsView
 var build_controller: BuildController
 
-## Плейсхолдеры баланса стартового склада.
-const START_STORAGE_CAPACITY := 500
-const START_RESOURCES := {
-	&"logs": 20, &"planks": 10, &"stone": 10, &"scrap_metal": 15,
-	&"firewood": 30, &"potato": 25, &"grain": 20, &"spare_parts": 5,
-}
-
 
 func _ready() -> void:
 	world_map = WorldMap.new(DEFAULT_WORLD_SEED)
 	SimRunner.sim.register_system(world_map)
+	seasons = SeasonSystem.new()
+	SimRunner.sim.register_system(seasons)
+	seasons.attach(SimRunner.sim)
 	economy = EconomySystem.new(world_map)
 	SimRunner.sim.register_system(economy)
-	_create_starting_storage()
+	StartState.create_storage(world_map, economy)
 	construction = ConstructionSystem.new(world_map, economy)
 	SimRunner.sim.register_system(construction)
 	construction.attach(SimRunner.sim)
@@ -37,6 +35,8 @@ func _ready() -> void:
 	SimRunner.sim.register_system(villagers)
 	villagers.attach(SimRunner.sim)
 	villagers.start_new_game()
+	seasons.bind(economy, construction, villagers)
+	StartState.populate(construction, villagers, seasons)
 	world_view = WorldView.new()
 	world_view.name = "World"
 	add_child(world_view)
@@ -52,6 +52,11 @@ func _ready() -> void:
 	add_child(villagers_view)
 	villagers_view.setup(villagers)
 	$UI/HUD.bind_villagers(villagers)
+	$UI/HUD.bind_seasons(seasons)
+	season_visuals = SeasonVisuals.new()
+	season_visuals.name = "SeasonVisuals"
+	add_child(season_visuals)
+	season_visuals.setup(seasons, world_view, $WorldEnvironment, $DirectionalLight3D)
 	var rig: CameraRig = $CameraRig
 	rig.setup(world_map, $CameraRig/Camera3D)
 	SimRunner.sim.register_system(rig.save_system)
@@ -63,11 +68,3 @@ func _ready() -> void:
 	build_controller.villagers = villagers
 	build_controller.villagers_view = villagers_view
 	print("LongDarks: main scene ready, world %dx%d, terrain verts %d" % [world_map.size, world_map.size, world_view.terrain_vertex_count])
-
-
-func _create_starting_storage() -> void:
-	var f := world_map.factory_cell
-	var s := Storage.new(START_STORAGE_CAPACITY, world_map.cell_center(f.x, f.y))
-	economy.add_storage(s)
-	for k in START_RESOURCES:
-		s.add(k, START_RESOURCES[k])
