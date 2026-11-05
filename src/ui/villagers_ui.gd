@@ -244,14 +244,14 @@ func apply_layout(dp: float, left: float, top: float, right: float, bottom: floa
 	panel.offset_bottom = -bottom
 	toast_panel.anchor_left = 0.5
 	toast_panel.anchor_right = 0.5
-	toast_panel.anchor_top = 0.0
-	toast_panel.anchor_bottom = 0.0
-	var w := 300.0 * dp
+	toast_panel.anchor_top = 1.0
+	toast_panel.anchor_bottom = 1.0
+	var w := minf(300.0 * dp, size.x - 2.0 * (left + right + 56.0 * dp)) if size.x > 0.0 else 300.0 * dp
 	toast_panel.offset_left = -w * 0.5
 	toast_panel.offset_right = w * 0.5
-	toast_panel.offset_top = top + 52.0 * dp * 2.2
-	toast_panel.offset_bottom = toast_panel.offset_top
-	toast_panel.grow_vertical = Control.GROW_DIRECTION_END
+	toast_panel.offset_bottom = -(bottom + 8.0 * dp)  # над нижним краем, левее плавающей кнопки
+	toast_panel.offset_top = toast_panel.offset_bottom
+	toast_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	for r in _rows.values():
 		(r["card"] as Button).custom_minimum_size = Vector2(0.0, 48.0 * dp)
 	for r in _prio_rows.values():
