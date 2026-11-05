@@ -222,15 +222,15 @@ func _try_start(b: Building, s: Dictionary) -> void:
 		if r != null and r.needs_repair():
 			break
 		queue.pop_front()  # исчез или уже исправен
+	var paid := false
 	if not queue.is_empty():
 		var r := get_repairable(queue[0])
-		if not economy.consume(r.get_repair_cost()):
-			_set_stall(b.id, s, &"no_input")
-			return
-		s["job"] = &"repair"
-	else:
-		var inputs := Recipes.inputs(s["recipe"])
-		if not economy.consume(inputs):
+		if economy.consume(r.get_repair_cost()):
+			s["job"] = &"repair"
+			paid = true
+	if not paid:
+		# Нет запчастей на шаг ремонта — делаем запчасти по рецепту (иначе тупик).
+		if not economy.consume(Recipes.inputs(s["recipe"])):
 			_set_stall(b.id, s, &"no_input")
 			return
 		s["job"] = &"recipe"

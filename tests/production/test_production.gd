@@ -228,3 +228,15 @@ func test_save_via_simulation() -> void:
 	a.sim.from_dict(JSON.parse_string(JSON.stringify(d)))
 	assert_false(a.prod.is_paused(id))
 	assert_true(a.prod.progress_fraction(id) > 0.0)
+
+
+func test_repair_without_parts_makes_parts_from_scrap() -> void:
+	var e := Env.new()
+	var w := e.building(&"workshop")
+	var t := Truck.new(&"t", 0.7)
+	e.prod.register_repairable(t)
+	e.eco.deposit(&"scrap_metal", 20)
+	e.prod.queue_repair(w, &"t")
+	e.run(400.0)
+	assert_almost_eq(t.condition, 1.0)
+	assert_true(e.prod.repair_queue(w).is_empty())
