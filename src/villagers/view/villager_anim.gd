@@ -56,7 +56,7 @@ static func state_of(v: Villager, vs: VillagerSystem = null) -> Dictionary:
 	match t.get("kind", &""):
 		&"chop":
 			pose = POSE_CHOP if phase == &"chop" else (POSE_STACK if phase == &"deliver" else POSE_PICKUP)
-		&"carry", &"food":
+		&"carry", &"food", &"stoke":
 			pose = POSE_STACK if phase == &"deliver" else POSE_PICKUP
 		&"water":
 			pose = POSE_STACK if phase == &"deliver" else POSE_CRANK

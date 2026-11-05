@@ -70,6 +70,7 @@ const WARMTH_RATE_PER_DAY := 4.0   # житель подстраивается �
 const WARM_BELOW := 0.3            # пора домой греться
 const WARM_DONE := 0.6
 const COLD_WARNING := 0.35
+const STOKE_BELOW := 1               # житель идёт топить, когда в печи не больше стольких дров
 const BURN_LOGS_PER_DAY := 5.0     # дров в сутки горит печь при множителе 1
 const HEAT_MIN_COLD := 0.02        # ниже — тепло не нужно (хук wants_heat)
 

@@ -4,7 +4,7 @@ extends RefCounted
 ## лечение, смерть и выбор «нужных дел» (поесть, попить, лечь, лечиться), которые
 ## приоритетнее работы. Принадлежит VillagerSystem (vs.needs). Баланс — NeedsDefs.
 
-const KINDS: Array[StringName] = [&"eat", &"drink", &"sleep", &"warm", &"heal", &"treat"]
+const KINDS: Array[StringName] = [&"eat", &"drink", &"sleep", &"warm", &"heal", &"treat", &"stoke"]
 
 var vs: VillagerSystem
 var _home_acc := 1.0e9
@@ -127,15 +127,19 @@ func ambient_warmth(v: Villager) -> float:
 	return clampf(out, 0.0, 1.0)
 
 
-## Печи домов с жильцами подкладывают дрова из поленницы (ХУК: сделать физическим делом).
-func _stoke_homes() -> void:
+## Дому пора топить: тепло нужно, печь почти пуста, на поленнице есть дрова.
+func stoke_wanted(id: int) -> bool:
 	var hs := vs.household
-	if not hs.simulate_heat:
-		return
-	for id in hs.home_ids():
-		var h := hs.home(id)
-		if h.stove <= 1 and h.woodpile > 0 and not residents(id).is_empty():
-			hs.stoke(id)
+	var h := hs.home(id)
+	return h != null and hs.simulate_heat and hs.wants_heat(id) and h.stove <= NeedsDefs.STOKE_BELOW and h.woodpile > 0 and hs.stove_demand(id) > 0
+
+
+## Занят ли уже другой житель топкой этого дома.
+func _stoker_busy(id: int, me: Villager) -> bool:
+	for o: Villager in vs.villagers.values():
+		if o != me and o.task.get("kind", &"") == &"stoke" and int(o.task.get("target", 0)) == id:
+			return true
+	return false
 
 
 # ---------- тик ----------
@@ -148,7 +152,6 @@ func tick(dt: float) -> void:
 	if _home_acc >= NeedsDefs.HOME_ASSIGN_INTERVAL:
 		_home_acc = 0.0
 		assign_homes()
-		_stoke_homes()
 	var staff := {}   # id больницы -> множитель лечения (лучший из присутствующих)
 	for v: Villager in vs.villagers.values():
 		if v.task.get("kind", &"") == &"treat" and v.at_site:
@@ -282,6 +285,8 @@ func job_for(v: Villager) -> Dictionary:
 		return _job(&"sleep", maxi(v.home_id, 0), &"home")
 	if _wants_sleep(v, cur):
 		return _job(&"sleep", maxi(v.home_id, 0), &"home")
+	if v.home_id > 0 and stoke_wanted(v.home_id) and (cur == &"stoke" or not _stoker_busy(v.home_id, v)):
+		return _job(&"stoke", v.home_id, &"stove")
 	if v.home_id > 0 and (v.need(NeedsDefs.WARMTH) < NeedsDefs.WARM_BELOW or (cur == &"warm" and v.need(NeedsDefs.WARMTH) < NeedsDefs.WARM_DONE)):
 		if hs.house_warmth(v.home_id) > v.need(NeedsDefs.WARMTH) + 0.1:
 			return _job(&"warm", v.home_id, &"home")

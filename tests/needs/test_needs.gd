@@ -160,20 +160,48 @@ func test_empty_stove_means_cold() -> void:
 	assert_true(NeedsDefs.warnings(v.needs, v.sick).has(NeedsDefs.WARMTH), "cold warning")
 
 
-func test_stove_refills_from_woodpile_and_demand_is_real() -> void:
+func test_stove_is_stoked_by_hand_from_woodpile() -> void:
 	var e := _env()
 	var id := _house(e)
 	var hs := e.vs.household
 	var h := hs.home(id)
-	_villager(e)
+	var v := _villager(e)
 	e.vs.needs.assign_homes()
 	assert_eq(hs.stove_demand(id), hs.stove_capacity(id), "empty stove wants wood")
 	h.woodpile = 8
-	e.run(3.0)
-	assert_true(h.stove > 0 or h.lit(), "residents stoke from the woodpile")
+	e.run(1.0)
+	assert_eq(h.stove, 0, "not instant")
+	assert_eq(h.woodpile, 8, "wood still on the pile before anyone arrives")
+	var saw_carry := false
+	var saw_stoke := false
+	for i in 300:
+		e.run(0.1)
+		if v.task.get("kind", &"") == &"stoke" or e.hero().task.get("kind", &"") == &"stoke":
+			saw_stoke = true
+			for w in [v, e.hero()]:
+				if w.task.get("kind", &"") == &"stoke" and w.task.get("phase", &"") == &"deliver":
+					saw_carry = true
+					assert_eq(VillagerAnim.state_of(w)["load"], VillagerAnim.LOAD_FIREWOOD, "armful visible")
+					assert_true(w.task["carry"] > 0 and w.task["carry"] <= TaskDefs.CARRY_CAPACITY)
+					assert_eq(h.stove, 0, "stove empty while the armful is in hands")
+	assert_true(saw_stoke and saw_carry, "villager walked, took an armful and carried it")
+	assert_true(h.stove > 0 or h.lit(), "stove loaded after arrival")
 	assert_true(h.woodpile < 8)
 	hs.outdoor_cold = 0.0
 	assert_eq(hs.stove_demand(id), 0, "no heat needed when warm outside")
+
+
+func test_empty_woodpile_does_not_refill_stove() -> void:
+	var e := _env()
+	var id := _house(e)
+	var h := e.vs.household.home(id)
+	_villager(e)
+	e.vs.needs.assign_homes()
+	assert_eq(h.woodpile, 0)
+	e.run(40.0)
+	assert_eq(h.stove, 0)
+	assert_false(h.lit())
+	assert_false(e.vs.needs.stoke_wanted(id))
 
 
 func test_sleep_at_night_restores_rest() -> void:

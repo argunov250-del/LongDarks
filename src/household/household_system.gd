@@ -121,17 +121,6 @@ func stove_lit(id: int) -> bool:
 	return h != null and h.lit()
 
 
-## Житель подбрасывает дрова из поленницы в печь (без ходьбы: он дома). Возвращает переложенное.
-func stoke(id: int) -> int:
-	var h := home(id)
-	if h == null or h.woodpile <= 0:
-		return 0
-	var n := mini(h.woodpile, maxi(0, stove_capacity(id) - h.stove))
-	h.woodpile -= n
-	h.stove += n
-	return n
-
-
 ## Столовая с водой ближайшая к жителю (id здания) или -1.
 func canteen_with_water(v: Villager) -> int:
 	sync()

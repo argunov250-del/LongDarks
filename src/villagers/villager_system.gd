@@ -575,6 +575,8 @@ func _assign(v: Villager, job: Dictionary) -> void:
 			v.task["src"] = household.nearest_well(v.pos)  # id здания-колодца
 		&"garden":
 			v.task["phase"] = &"work"
+		&"stoke":
+			v.task["phase"] = &"fetch"  # к поленнице за охапкой, затем к печи
 	v.path.clear()
 	v.at_site = false
 
@@ -617,7 +619,7 @@ func _task_pos(v: Villager, t: Dictionary) -> Variant:
 			return world.cell_center(c.x, c.y)
 		&"dismantle":
 			return construction.ruins[t["target"]]["pos"] if construction.ruins.has(t["target"]) else null
-		&"chop", &"carry", &"water", &"food", &"garden":
+		&"chop", &"carry", &"water", &"food", &"garden", &"stoke":
 			return _haul_pos(t)
 		&"eat", &"drink":
 			var mb := construction.get_building(t["target"])
@@ -644,7 +646,7 @@ func _task_radius(t: Dictionary) -> float:
 			return _building_radius(b) if b != null else 1.0
 		&"fell", &"dismantle":
 			return 1.7
-		&"chop", &"carry", &"water", &"food", &"garden":
+		&"chop", &"carry", &"water", &"food", &"garden", &"stoke":
 			return _haul_radius(t)
 		&"eat", &"drink":
 			if t["dest"] == &"home":
@@ -664,6 +666,8 @@ func _haul_pos(t: Dictionary) -> Variant:
 	var house := construction.get_building(t["target"])
 	match t["phase"]:
 		&"fetch":
+			if t["kind"] == &"stoke":
+				return household.woodpile_pos(house) if house != null else null
 			if t["kind"] == &"water":
 				var w := construction.get_building(t["src"])
 				return w.position if w != null else null
@@ -689,6 +693,8 @@ func _haul_pos(t: Dictionary) -> Variant:
 func _haul_radius(t: Dictionary) -> float:
 	match t["phase"]:
 		&"fetch":
+			if t["kind"] == &"stoke":
+				return HouseholdDefs.SPOT_RADIUS
 			if t["kind"] == &"water":
 				var w := construction.get_building(t["src"])
 				return _building_radius(w) if w != null else 1.0
@@ -840,7 +846,7 @@ func _work(v: Villager, t: Dictionary, dt: float) -> void:
 			_work_meal(v, t, dt)
 		&"sleep", &"warm", &"heal", &"treat":
 			pass  # восстановление и лечение — в NeedsSystem.tick, пока житель на месте
-		&"chop", &"carry", &"water", &"food", &"garden":
+		&"chop", &"carry", &"water", &"food", &"garden", &"stoke":
 			t["work"] += work_rate(v, TaskDefs.CHORES) * dt
 			train(v, TaskDefs.CHORES, dt)
 			var need := _phase_work(t)
@@ -959,6 +965,12 @@ func _finish_fetch(v: Villager, t: Dictionary) -> void:
 	var target: int = t["target"]
 	var n := 0
 	match t["kind"]:
+		&"stoke":
+			var hh := household.home(target)
+			n = mini(mini(TaskDefs.CARRY_CAPACITY, household.stove_demand(target)), hh.woodpile if hh != null else 0)
+			t["res"] = &"firewood"
+			if n > 0:
+				hh.woodpile -= n
 		&"carry":
 			n = mini(mini(TaskDefs.CARRY_CAPACITY, household.wood_room(target)), economy.total(&"firewood"))
 			t["res"] = &"firewood"
@@ -1082,6 +1094,8 @@ func task_text(v: Villager) -> String:
 				txt = "Спит дома"
 		&"warm":
 			txt = "Греется дома"
+		&"stoke":
+			txt = "Топит печь: несёт дрова" if t["phase"] == &"deliver" else "Берёт дрова на поленнице"
 		&"heal":
 			txt = "Лечится в больнице"
 		&"treat":
