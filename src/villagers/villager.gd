@@ -19,6 +19,10 @@ var arriving := false               # новичок идёт в посёлок
 var task: Dictionary = {}
 var at_site := false                # стоит на месте работы (для анимации/текста)
 var think_cd := 0.0
+var needs: Dictionary = NeedsDefs.full()  # NeedsDefs.NEEDS -> 0..1 (шаг 11)
+var sick := false
+var home_id: int = 0                # здание-жильё, 0 — бездомный (расселяет VillagerSystem.assign_homes)
+var sick_acc := 0.0                 # накопление до следующего броска на болезнь
 var banned: Dictionary = {}         # key -> время, до которого цель недоступна (не сохраняется)
 
 
@@ -28,6 +32,14 @@ func can_die() -> bool:
 
 func profession_name() -> String:
 	return VillagerDefs.profession_name(profession)
+
+
+func need(n: StringName) -> float:
+	return needs.get(n, 1.0)
+
+
+func set_need(n: StringName, x: float) -> void:
+	needs[n] = clampf(x, 0.0, 1.0)
 
 
 func skill(cat: StringName) -> float:
@@ -79,11 +91,15 @@ func to_dict() -> Dictionary:
 	var tk := {}
 	for k in task:
 		tk[String(k)] = String(task[k]) if (task[k] is StringName) else task[k]
+	var nd := {}
+	for k in needs:
+		nd[String(k)] = needs[k]
 	return {
 		"id": id, "name": display_name, "sex": String(sex), "age": age, "backstory": backstory,
 		"profession": String(profession), "traits": tr, "skills": sk,
 		"hero": is_hero, "immortal": immortal, "arriving": arriving,
 		"pos": [pos.x, pos.y, pos.z], "facing": facing, "task": tk, "think_cd": think_cd,
+		"needs": nd, "sick": sick, "home_id": home_id, "sick_acc": sick_acc,
 	}
 
 
@@ -110,6 +126,13 @@ static func from_dict(d: Dictionary) -> Villager:
 	v.is_hero = bool(d.get("hero", false))
 	v.immortal = bool(d.get("immortal", false)) or v.is_hero
 	v.arriving = bool(d.get("arriving", false))
+	if d.get("needs") is Dictionary:
+		for n in NeedsDefs.NEEDS:
+			if d["needs"].has(String(n)):
+				v.set_need(n, float(d["needs"][String(n)]))
+	v.sick = bool(d.get("sick", false))
+	v.home_id = SaveManager.to_int(d.get("home_id"), 0)
+	v.sick_acc = float(d.get("sick_acc", 0.0))
 	var p = d.get("pos")
 	if p is Array and p.size() == 3:
 		v.pos = Vector3(float(p[0]), float(p[1]), float(p[2]))

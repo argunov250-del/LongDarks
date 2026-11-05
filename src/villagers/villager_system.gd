@@ -10,10 +10,16 @@ extends SimSystem
 ## скорости при этом отключаются: external_work = true).
 ##
 ## Герой (is_hero) и собака не умирают: remove_villager отказывает бессмертным,
-## любая будущая система смерти обязана проверять Villager.can_die().
+## любая система смерти обязана проверять Villager.can_die().
+##
+## Шаг 11 (потребности, см. NeedsSystem/NeedsDefs): нужные дела (поесть, попить, лечь спать,
+## лечиться, согреться) приоритетнее работы; нужды снижают work_rate.
 
 const TOPIC_ARRIVED := &"villager_arrived"      # {id, name, profession}
 const TOPIC_CHANGED := &"villagers_changed"     # состав/приоритеты изменились
+const TOPIC_SICK := &"villager_sick"            # {id, name, profession}
+const TOPIC_RECOVERED := &"villager_recovered"  # {id, name, profession}
+const TOPIC_DIED := &"villager_died"            # {id, name, profession, cause}
 
 enum Go { ARRIVED, MOVING, BLOCKED }
 
@@ -28,6 +34,13 @@ var dog: Dog
 var priorities: Dictionary = {}         # StringName категория -> int 0..3
 var building_priorities: Dictionary = {} # int id здания -> int 0..3 (перекрывает категорию)
 var household: HouseholdSystem          # запасы домов и столовых, огороды, сараи (шаг 10b)
+var needs: NeedsSystem                  # потребности, расселение, болезни (шаг 11)
+## Потребности и ночной сон включены (тесты старых шагов отключают).
+var needs_enabled: bool = true:
+	set(value):
+		needs_enabled = value
+		if household != null:
+			household.simulate_heat = value
 var next_arrival_in: float = 0.0
 ## Экземплярные копии констант (тесты их подменяют).
 var arrival_min: float = VillagerDefs.ARRIVAL_MIN
@@ -52,6 +65,7 @@ func _init(world_in: WorldMap, economy_in: EconomySystem, construction_in: Const
 	production = production_in
 	pathfinder = Pathfinder.new(world)
 	household = HouseholdSystem.new(construction, economy)
+	needs = NeedsSystem.new(self)
 	construction.external_work = true
 	production.external_work = true
 	reset_priorities()
@@ -85,6 +99,8 @@ func start_new_game() -> void:
 	reset_priorities()
 	building_priorities.clear()
 	household.load_state({})
+	if _sim != null and _sim.clock.get_total_usec() == 0:
+		_sim.clock.set_total_seconds(NeedsDefs.START_HOUR / 24.0 * float(_sim.clock.day_length_usec) / GameClock.USEC)
 	var hero := Villager.generate(_rng(), {"sex": &"m", "profession": &"mechanic", "hero": true, "age": VillagerDefs.HERO_AGE})
 	hero.id = _next_id
 	_next_id += 1
@@ -134,6 +150,43 @@ func remove_villager(id: int) -> bool:
 	return true
 
 
+## Смерть жителя (болезнь, голод, холод...): событие + удаление. Герой не умирает.
+func kill_villager(id: int, cause: StringName = &"") -> bool:
+	var v := get_villager(id)
+	if v == null or not v.can_die():
+		return false
+	var payload := {"id": v.id, "name": v.display_name, "profession": v.profession, "cause": cause}
+	_drop_load(v)
+	if not remove_villager(id):
+		return false
+	needs.assign_homes()
+	_emit(TOPIC_DIED, payload)
+	return true
+
+
+## ХУК СЕЗОНОВ/ПОГОДЫ: холод снаружи 0 (тепло) .. 1 (лютый мороз).
+func set_outdoor_cold(x: float) -> void:
+	household.outdoor_cold = clampf(x, 0.0, 1.0)
+
+
+func outdoor_cold() -> float:
+	return household.outdoor_cold
+
+
+## ХУК СЕЗОНОВ: общий множитель расхода (еда, вода, тепло, дрова); зима > 1.
+func set_consumption_multiplier(x: float) -> void:
+	household.consumption_multiplier = maxf(0.0, x)
+
+
+func consumption_multiplier() -> float:
+	return household.consumption_multiplier
+
+
+## ХУК ссор/ухода к соседям: сводная «нужда» жителя 0..1.
+func suffering(v: Villager) -> float:
+	return NeedsDefs.suffering(v.needs, v.sick)
+
+
 func villager_near(p: Vector3, radius: float) -> Villager:
 	var best: Villager = null
 	var best_d := radius
@@ -158,6 +211,8 @@ func spawn_newcomer() -> Villager:
 	v.id = _next_id
 	_next_id += 1
 	v.arriving = true
+	for n in NeedsDefs.NEWCOMER_START:
+		v.set_need(n, NeedsDefs.NEWCOMER_START[n])
 	v.pos = _ground(_edge_spawn())
 	v.task = {"kind": &"arrive", "cat": &"", "key": "arrive", "target": 0, "phase": &"", "work": 0.0, "carry": 0, "src": 0, "res": &"", "dest": &""}
 	v.think_cd = float(v.id % 10) * 0.1
@@ -263,6 +318,8 @@ func canteen_for(v: Villager) -> int:
 func profession_multiplier(v: Villager, cat: StringName, building_type: StringName = &"") -> float:
 	if cat == TaskDefs.CHORES and building_type == &"canteen":
 		return TaskDefs.CANTEEN_COOK_BONUS if v.profession == &"cook" else 1.0
+	if cat == TaskDefs.CHORES and building_type == &"hospital":
+		return 1.0
 	if cat == TaskDefs.PRODUCTION:
 		return TaskDefs.PRODUCTION_MATCH_BONUS if TaskDefs.PRODUCTION_PROFESSION.get(building_type, &"") == v.profession else 1.0
 	return (TaskDefs.PROFESSION_BONUS.get(cat, {}) as Dictionary).get(v.profession, 1.0)
@@ -310,7 +367,12 @@ func suitability(v: Villager, cat: StringName, building_type: StringName = &"") 
 
 ## Работа в секунду жителя в категории (REPAIR — ремонт в мастерской).
 func work_rate(v: Villager, cat: StringName, building_type: StringName = &"") -> float:
-	return TaskDefs.BASE_RATE.get(cat, 1.0) * suitability(v, cat, building_type)
+	return TaskDefs.BASE_RATE.get(cat, 1.0) * suitability(v, cat, building_type) * needs_multiplier(v)
+
+
+## Множитель скорости работы от нужд (еда, вода, тепло, отдых, здоровье); 1.0 — всё в порядке.
+func needs_multiplier(v: Villager) -> float:
+	return NeedsDefs.rate_multiplier(v.needs) if needs_enabled else 1.0
 
 
 # ---------- список задач ----------
@@ -352,6 +414,18 @@ func _build_jobs() -> void:
 		for rid in construction.open_dismantles():
 			_job("d:%d" % rid, TaskDefs.DISMANTLE, &"dismantle", rid, construction.ruins[rid]["pos"], TaskDefs.DISMANTLE_SLOTS, dp, TaskDefs.DISMANTLE)
 	_build_chore_jobs()
+	_build_treat_jobs()
+
+
+## Больница с пациентами ждёт персонал: врач (профессия) предпочтительнее, без врачей — любой.
+func _build_treat_jobs() -> void:
+	if not needs_enabled:
+		return
+	for id in needs.hospital_ids():
+		var p: int = building_priorities.get(id, NeedsDefs.TREAT_PRIORITY)
+		if p > 0 and not needs.patients(id).is_empty():
+			var b := construction.get_building(id)
+			_job("t:%d" % id, TaskDefs.CHORES, &"treat", id, b.position, NeedsDefs.HOSPITAL_STAFF_SLOTS, p, TaskDefs.CHORES, &"hospital")
 
 
 func _day() -> int:
@@ -443,6 +517,8 @@ func _pick(v: Villager, use_claims: bool) -> Dictionary:
 		var key: String = job["key"]
 		if v.banned.get(key, 0.0) > _time:
 			continue
+		if job["kind"] == &"treat" and not needs.can_treat(v):
+			continue
 		if use_claims and _claims.get(key, 0) - (1 if key == cur else 0) >= job["cap"]:
 			continue
 		var s := _score(v, job) + (TaskDefs.STICKY_BONUS if key == cur else 0.0)
@@ -455,6 +531,15 @@ func _pick(v: Villager, use_claims: bool) -> Dictionary:
 func _think(v: Villager) -> void:
 	_ensure_jobs()
 	_recount_claims()
+	if needs_enabled and not v.arriving:
+		var nj := needs.job_for(v)
+		if not nj.is_empty():
+			if nj["key"] != v.task.get("key", ""):
+				_assign(v, nj)
+				_jobs_dirty = true
+			return
+		if NeedsSystem.is_need_kind(v.task.get("kind", &"")) and v.task.get("kind", &"") != &"treat":
+			_abandon(v)
 	var best := _pick(v, true)
 	if best.is_empty():
 		_drop_load(v)
@@ -534,6 +619,19 @@ func _task_pos(v: Villager, t: Dictionary) -> Variant:
 			return construction.ruins[t["target"]]["pos"] if construction.ruins.has(t["target"]) else null
 		&"chop", &"carry", &"water", &"food", &"garden":
 			return _haul_pos(t)
+		&"eat", &"drink":
+			var mb := construction.get_building(t["target"])
+			if mb == null:
+				return null
+			return household.door_pos(mb) if t["dest"] == &"home" else mb.position
+		&"sleep", &"warm":
+			if t["target"] == 0:
+				return v.pos
+			var hb := construction.get_building(t["target"])
+			return household.door_pos(hb) if hb != null else null
+		&"heal", &"treat":
+			var hosp := construction.get_building(t["target"])
+			return hosp.position if hosp != null else null
 	return null
 
 
@@ -548,6 +646,16 @@ func _task_radius(t: Dictionary) -> float:
 			return 1.7
 		&"chop", &"carry", &"water", &"food", &"garden":
 			return _haul_radius(t)
+		&"eat", &"drink":
+			if t["dest"] == &"home":
+				return NeedsDefs.HOME_REACH_RADIUS
+			var cb := construction.get_building(t["target"])
+			return _building_radius(cb) if cb != null else 1.0
+		&"sleep", &"warm":
+			return NeedsDefs.HOME_REACH_RADIUS
+		&"heal", &"treat":
+			var hb := construction.get_building(t["target"])
+			return _building_radius(hb) if hb != null else 1.0
 	return 1.0
 
 
@@ -601,6 +709,8 @@ func _committed(t: Dictionary) -> bool:
 func _alive(t: Dictionary) -> bool:
 	if t["kind"] == &"arrive":
 		return true
+	if NeedsSystem.is_need_kind(t["kind"]) and t["kind"] != &"treat":
+		return t["target"] == 0 or construction.get_building(t["target"]) != null
 	if t["phase"] == &"chop" or t["phase"] == &"deliver":
 		var h := construction.get_building(t["target"])
 		return h != null and h.is_done()
@@ -617,6 +727,8 @@ func tick(sim: Simulation, dt: float) -> void:
 	_time += dt
 	_jobs_age += 1
 	household.tick(sim, dt)
+	if needs_enabled:
+		needs.tick(dt)
 	next_arrival_in -= dt
 	if next_arrival_in <= 0.0:
 		spawn_newcomer()
@@ -724,6 +836,10 @@ func _work(v: Villager, t: Dictionary, dt: float) -> void:
 			var cat := TaskDefs.REPAIR if production.active_job_kind(b.id) == &"repair" else TaskDefs.PRODUCTION
 			production.add_work(b.id, work_rate(v, cat, b.type) * dt)
 			train(v, cat, dt)
+		&"eat", &"drink":
+			_work_meal(v, t, dt)
+		&"sleep", &"warm", &"heal", &"treat":
+			pass  # восстановление и лечение — в NeedsSystem.tick, пока житель на месте
 		&"chop", &"carry", &"water", &"food", &"garden":
 			t["work"] += work_rate(v, TaskDefs.CHORES) * dt
 			train(v, TaskDefs.CHORES, dt)
@@ -732,6 +848,49 @@ func _work(v: Villager, t: Dictionary, dt: float) -> void:
 				_end_task(v)
 			elif t["work"] >= need:
 				_finish_phase(v, t)
+
+
+## Приём пищи/воды: по единице из запаса дома или столовой (порции по EAT_UNIT_TIME).
+func _work_meal(v: Villager, t: Dictionary, dt: float) -> void:
+	var eating: bool = t["kind"] == &"eat"
+	t["work"] += dt
+	if t["work"] < (NeedsDefs.EAT_UNIT_TIME if eating else NeedsDefs.DRINK_UNIT_TIME):
+		return
+	t["work"] = 0.0
+	var h := household.stock_of(t["target"])
+	if h == null:
+		_end_task(v)
+		return
+	var gain := 0.0
+	if eating:
+		var res := _meal_food(h.food)
+		if res == &"":
+			_end_task(v)
+			return
+		h.food.remove(res, 1)
+		gain = NeedsDefs.FOOD_VALUE.get(res, NeedsDefs.FOOD_PER_UNIT)
+	else:
+		if h.water <= 0:
+			_end_task(v)
+			return
+		h.water -= 1
+		gain = NeedsDefs.WATER_PER_UNIT
+	var n := NeedsDefs.FOOD if eating else NeedsDefs.WATER
+	v.set_need(n, v.need(n) + gain)
+	if v.need(n) >= NeedsDefs.MEAL_FULL:
+		_end_task(v)
+
+
+## Что съесть первым: сначала скоропортящееся.
+func _meal_food(s: Storage) -> StringName:
+	var best := &""
+	var br := -1.0
+	for res in s.contents:
+		var r := ResourceDefs.spoil_rate(res)
+		if s.contents[res] > 0 and (r > br or (is_equal_approx(r, br) and String(res) < String(best))):
+			br = r
+			best = res
+	return best
 
 
 func _end_task(v: Villager) -> void:
@@ -909,6 +1068,24 @@ func task_text(v: Villager) -> String:
 			else:
 				var h := household.home(t["target"])
 				txt = "Сажает на огороде" if h != null and h.garden_state == Household.GARDEN_EMPTY else "Собирает урожай"
+	match t["kind"]:
+		&"eat":
+			txt = "Обедает в столовой" if t["dest"] == &"canteen" else "Ест дома"
+		&"drink":
+			txt = "Пьёт в столовой" if t["dest"] == &"canteen" else "Пьёт воду дома"
+		&"sleep":
+			if v.sick:
+				txt = "Болеет, отлёживается"
+			elif t["target"] == 0:
+				txt = "Спит под открытым небом"
+			else:
+				txt = "Спит дома"
+		&"warm":
+			txt = "Греется дома"
+		&"heal":
+			txt = "Лечится в больнице"
+		&"treat":
+			txt = "Лечит больных"
 	if t["kind"] != &"arrive" and not v.at_site:
 		txt = "Идёт: " + txt
 	return txt

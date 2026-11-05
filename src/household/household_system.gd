@@ -6,7 +6,8 @@ extends RefCounted
 ## Запасы создаются по готовому жилью/столовой лениво (sync) и сохраняются при улучшении
 ## дома (id здания не меняется).
 ##
-## API шага 11 (еда/отопление): house_has_food(id), canteen_for(villager),
+## Шаг 11: отопление (печь жжёт дрова, тепло дома), хуки outdoor_cold/consumption_multiplier.
+## API (еда/отопление): house_has_food(id), canteen_for(villager),
 ## stove_demand(id) (хук отопления: heating_needed), HouseholdDefs.garden_season_allows (хук сезонов).
 
 const TOPIC_CHANGED := &"household_changed"
@@ -15,8 +16,13 @@ var construction: ConstructionSystem
 var economy: EconomySystem
 var homes: Dictionary = {}      # int id здания -> Household (жильё)
 var canteens: Dictionary = {}   # int id здания -> Household (столовые)
-## ХУК ОТОПЛЕНИЯ: true — дому нужны дрова в печи (до её вместимости). Расход — шаг 11.
+## ХУК ОТОПЛЕНИЯ: true — дому нужны дрова в печи (до её вместимости).
 var heating_needed: bool = true
+## ХУКИ СЕЗОНОВ/ПОГОДЫ (шаг 11): холод снаружи 0..1 и общий множитель расхода (еда, тепло, дрова).
+var outdoor_cold: float = NeedsDefs.DEFAULT_OUTDOOR_COLD
+var consumption_multiplier: float = 1.0
+## Отопление и расход дров идут (тесты старых шагов отключают).
+var simulate_heat: bool = true
 
 var _sim: Simulation
 
@@ -44,6 +50,7 @@ func sync() -> void:
 			homes[b.host_id].barn = true
 		if BuildingDefs.is_housing(b.type) and not homes.has(id):
 			homes[id] = Household.new(id, &"house")
+			homes[id].warmth = NeedsDefs.unheated_warmth(b.type, outdoor_cold)
 		elif BuildingDefs.is_canteen(b.type) and not canteens.has(id):
 			canteens[id] = Household.new(id, &"canteen")
 
@@ -96,7 +103,50 @@ func stove_capacity(id: int) -> int:
 
 
 func wants_heat(_id: int) -> bool:
-	return heating_needed  # шаг 11: по температуре дома/сезону
+	return heating_needed and outdoor_cold >= NeedsDefs.HEAT_MIN_COLD
+
+
+## Расход дров в сутки на печь (мороз и общий множитель увеличивают).
+func fuel_per_day() -> float:
+	return NeedsDefs.BURN_LOGS_PER_DAY * NeedsDefs.cold_factor(&"fuel", outdoor_cold) * consumption_multiplier
+
+
+func house_warmth(id: int) -> float:
+	var h := home(id)
+	return h.warmth if h != null else NeedsDefs.outdoor_warmth(outdoor_cold)
+
+
+func stove_lit(id: int) -> bool:
+	var h := home(id)
+	return h != null and h.lit()
+
+
+## Житель подбрасывает дрова из поленницы в печь (без ходьбы: он дома). Возвращает переложенное.
+func stoke(id: int) -> int:
+	var h := home(id)
+	if h == null or h.woodpile <= 0:
+		return 0
+	var n := mini(h.woodpile, maxi(0, stove_capacity(id) - h.stove))
+	h.woodpile -= n
+	h.stove += n
+	return n
+
+
+## Столовая с водой ближайшая к жителю (id здания) или -1.
+func canteen_with_water(v: Villager) -> int:
+	sync()
+	var best := -1
+	var bd := INF
+	for id in canteens:
+		var h: Household = canteens[id]
+		var b := construction.get_building(id)
+		if b == null or not b.is_done() or h.water <= 0:
+			continue
+		var d := Vector2(b.position.x - v.pos.x, b.position.z - v.pos.z).length()
+		if d < bd:
+			bd = d
+			best = id
+	return best
 
 
 ## Сколько дров дом хочет в печь сейчас (0 — тепло не нужно или печь полна).
@@ -296,8 +346,27 @@ func tick(sim: Simulation, dt: float) -> void:
 			if h.milk_acc >= HouseholdDefs.MILK_PERIOD and h.food.add(&"milk", 1) > 0:
 				h.milk_acc -= HouseholdDefs.MILK_PERIOD
 		h.food.spoil(days)
+		if simulate_heat:
+			_tick_heat(id, h, days)
 	for id in canteens:
 		(canteens[id] as Household).food.spoil(days)
+
+
+## Печь жжёт дрова из своего запаса, дом греется к цели или остывает.
+func _tick_heat(id: int, h: Household, days: float) -> void:
+	var b := construction.get_building(id)
+	if b == null:
+		return
+	if h.burn_left <= 0.0 and h.stove > 0 and wants_heat(id):
+		h.stove -= 1
+		h.burn_left = 1.0
+	if h.burn_left > 0.0:
+		h.burn_left = maxf(0.0, h.burn_left - fuel_per_day() * days)
+	var target := NeedsDefs.unheated_warmth(b.type, outdoor_cold)
+	if h.lit():
+		target = minf(1.0, target + NeedsDefs.STOVE_HEAT)
+	var rate := NeedsDefs.HOUSE_HEAT_PER_DAY if target > h.warmth else NeedsDefs.HOUSE_COOL_PER_DAY
+	h.warmth = move_toward(h.warmth, target, rate * days)
 
 
 func _changed() -> void:
@@ -314,13 +383,16 @@ func save_state() -> Dictionary:
 	var cs := []
 	for id in canteen_ids():
 		cs.append((canteens[id] as Household).to_dict())
-	return {"homes": hs, "canteens": cs, "heating_needed": heating_needed}
+	return {"homes": hs, "canteens": cs, "heating_needed": heating_needed,
+		"outdoor_cold": outdoor_cold, "consumption_multiplier": consumption_multiplier}
 
 
 func load_state(d: Dictionary) -> void:
 	homes.clear()
 	canteens.clear()
 	heating_needed = bool(d.get("heating_needed", true))
+	outdoor_cold = clampf(float(d.get("outdoor_cold", NeedsDefs.DEFAULT_OUTDOOR_COLD)), 0.0, 1.0)
+	consumption_multiplier = maxf(0.0, float(d.get("consumption_multiplier", 1.0)))
 	if d.get("homes") is Array:
 		for e in d["homes"]:
 			if e is Dictionary:

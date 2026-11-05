@@ -29,10 +29,21 @@ func _init(cap: int = 5000, resources: Dictionary = {}, seed_value: int = 7) -> 
 	con.attach(sim)
 	prod.attach(sim)
 	vs.attach(sim)
+	vs.needs_enabled = false  # старые тесты не про потребности; включает enable_needs()
 	vs.start_new_game()
 	vs.arrival_min = 1.0e9  # без случайных гостей, пока тест не включит
 	vs.arrival_max = 1.0e9
 	vs.next_arrival_in = 1.0e9
+
+
+## Включает потребности (шаг 11). hour — время суток, ч.
+func enable_needs(hour: float = 10.0) -> void:
+	vs.needs_enabled = true
+	set_hour(hour)
+
+
+func set_hour(hour: float) -> void:
+	sim.clock.set_total_seconds(hour / 24.0 * float(sim.clock.day_length_usec) / GameClock.USEC)
 
 
 func run(seconds: float) -> void:

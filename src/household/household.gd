@@ -18,6 +18,8 @@ var garden_state: StringName = GARDEN_EMPTY
 var garden_progress: float = 0.0
 var garden_crop: StringName = &"potato"  # культура текущего цикла (чередуется)
 var barn: bool = false
+var warmth: float = 0.5         # тепло в доме 0..1 (шаг 11)
+var burn_left: float = 0.0      # остаток текущей закладки дров в печи, 0..1 (>0 — печь горит)
 var egg_acc: float = 0.0
 var milk_acc: float = 0.0
 
@@ -31,6 +33,10 @@ func _init(id_in: int = 0, kind_in: StringName = &"house") -> void:
 	else:
 		food = Storage.new(HouseholdDefs.HOUSE_FOOD_CAPACITY)
 		water_cap = HouseholdDefs.HOUSE_WATER_CAPACITY
+
+
+func lit() -> bool:
+	return burn_left > 0.0
 
 
 func garden_fraction() -> float:
@@ -47,6 +53,7 @@ func to_dict() -> Dictionary:
 		"id": id, "kind": String(kind), "woodpile": woodpile, "stove": stove, "water": water,
 		"food": food.to_dict(), "garden": String(garden_state), "garden_progress": garden_progress,
 		"crop": String(garden_crop), "barn": barn, "egg_acc": egg_acc, "milk_acc": milk_acc,
+		"warmth": warmth, "burn_left": burn_left,
 	}
 
 
@@ -67,4 +74,6 @@ static func from_dict(d: Dictionary) -> Household:
 	h.barn = bool(d.get("barn", false))
 	h.egg_acc = float(d.get("egg_acc", 0.0))
 	h.milk_acc = float(d.get("milk_acc", 0.0))
+	h.warmth = clampf(float(d.get("warmth", 0.5)), 0.0, 1.0)
+	h.burn_left = clampf(float(d.get("burn_left", 0.0)), 0.0, 1.0)
 	return h
