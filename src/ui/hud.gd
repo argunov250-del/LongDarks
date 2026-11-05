@@ -6,6 +6,9 @@ extends Control
 ## Корень и пустые контейнеры пропускают касания (mouse_filter = IGNORE),
 ## чтобы жесты камеры работали вне элементов управления.
 
+signal build_selected(type_id: StringName)   # выбрано здание во вкладке строительства
+signal action_pressed(id: StringName)         # кнопка панели действий (размещение/здание/руина)
+
 const MIN_TOUCH_DP := 48.0
 const REF_SHORT_SIDE_DP := 411.0  # типичная короткая сторона телефона в dp
 const TABS: Array[String] = ["Жильё", "Производство", "Социальные", "Защита"]
@@ -31,6 +34,12 @@ var _top_row: HBoxContainer
 var _tabs_row: HBoxContainer
 var _tab_panel: PanelContainer
 var _tab_title: Label
+var _tab_items: HFlowContainer
+var _bar: PanelContainer          # панель действий под верхней панелью
+var _bar_label: Label
+var _bar_row: HFlowContainer
+var _bar_ids: Array = []
+var _bar_buttons: Array[Button] = []
 var _menu_box: VBoxContainer
 var _menu_popup: PanelContainer   # ландшафт: выпадающее меню
 var _dock: VBoxContainer          # ландшафт: нижняя док-панель
@@ -99,7 +108,59 @@ func select_tab(index: int) -> void:
 		tab_buttons[i].set_pressed_no_signal(i == _selected_tab)
 	_tab_panel.visible = _selected_tab >= 0
 	if _selected_tab >= 0:
-		_tab_title.text = "%s: пусто" % TABS[_selected_tab]
+		_tab_title.text = TABS[_selected_tab]
+		_fill_tab_items(_selected_tab)
+
+
+func _fill_tab_items(tab: int) -> void:
+	for c in _tab_items.get_children():
+		_tab_items.remove_child(c)
+		c.queue_free()
+	for id in BuildingDefs.ids_in_tab(tab):
+		var b := _mk_button(BuildingDefs.display_name(id))
+		b.custom_minimum_size = Vector2(0.0, MIN_TOUCH_DP * _dp)
+		b.pressed.connect(_on_build_item.bind(id))
+		_tab_items.add_child(b)
+
+
+func _on_build_item(id: StringName) -> void:
+	select_tab(_selected_tab)  # свернуть вкладку
+	build_selected.emit(id)
+
+
+## Панель действий: заголовок + кнопки [id, текст, включена]. Если набор id не
+## изменился, обновляются только тексты/состояния (нажатие не прерывается).
+func show_actions(title: String, actions: Array) -> void:
+	_bar_label.text = title
+	var ids: Array = []
+	for a in actions:
+		ids.append(a[0])
+	if ids != _bar_ids:
+		for c in _bar_row.get_children():
+			_bar_row.remove_child(c)
+			c.queue_free()
+		_bar_buttons.clear()
+		_bar_ids = ids
+		for a in actions:
+			var b := _mk_button(a[1])
+			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			b.custom_minimum_size = Vector2(0.0, MIN_TOUCH_DP * _dp)
+			b.pressed.connect(func(): action_pressed.emit(a[0]))
+			_bar_row.add_child(b)
+			_bar_buttons.append(b)
+	for i in actions.size():
+		_bar_buttons[i].text = actions[i][1]
+		_bar_buttons[i].disabled = not actions[i][2]
+	_bar.visible = true
+
+
+func hide_actions() -> void:
+	_bar.visible = false
+	_bar_ids = []
+
+
+func is_actions_visible() -> bool:
+	return _bar.visible
 
 
 func do_save() -> void:
@@ -179,7 +240,12 @@ func _build() -> void:
 	_tab_panel = PanelContainer.new()
 	_tab_title = Label.new()
 	_tab_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_tab_panel.add_child(_tab_title)
+	var tab_box := _mk_box(VBoxContainer.new())
+	_tab_panel.add_child(tab_box)
+	tab_box.add_child(_tab_title)
+	_tab_items = HFlowContainer.new()
+	_tab_items.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tab_box.add_child(_tab_items)
 	_tab_panel.visible = false
 	_menu_box = _mk_box(VBoxContainer.new())
 	save_button = _mk_button("Сохранить")
@@ -207,6 +273,18 @@ func _build() -> void:
 	add_child(_sheet)
 	_sheet_box = _mk_box(VBoxContainer.new())
 	_sheet.add_child(_sheet_box)
+	_bar = PanelContainer.new()
+	_bar.visible = false
+	add_child(_bar)
+	var bar_box := _mk_box(VBoxContainer.new())
+	_bar.add_child(bar_box)
+	_bar_label = Label.new()
+	_bar_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bar_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	bar_box.add_child(_bar_label)
+	_bar_row = HFlowContainer.new()
+	_bar_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar_box.add_child(_bar_row)
 	fab = _mk_button("☰")
 	fab.pressed.connect(toggle_menu)
 	add_child(fab)
@@ -295,6 +373,18 @@ func _apply_layout() -> void:
 	_menu_popup.offset_top = tp + touch + 3.0 * edge
 	_menu_popup.offset_bottom = _menu_popup.offset_top
 	_menu_popup.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+
+	# Панель действий: под верхней панелью на всю ширину (оба режима).
+	_set_anchors(_bar, 0.0, 0.0, 1.0, 0.0)
+	_bar.offset_left = l
+	_bar.offset_right = -r
+	_bar.offset_top = tp + touch + 2.0 * edge
+	_bar.offset_bottom = _bar.offset_top
+	_bar.grow_vertical = Control.GROW_DIRECTION_END
+	for b in _bar_buttons:
+		b.custom_minimum_size = Vector2(0.0, touch)
+	for b in _tab_items.get_children():
+		(b as Control).custom_minimum_size = Vector2(0.0, touch)
 
 	# Портрет: лист снизу, FAB справа внизу (достаёт большой палец).
 	_set_anchors(_sheet, 0.0, 1.0, 1.0, 1.0)

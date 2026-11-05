@@ -4,6 +4,8 @@ extends Node3D
 
 var map: WorldMap
 var terrain_vertex_count := 0
+var _ruin_slots: Dictionary = {}   # индекс клетки -> [индекс экземпляра, исходный Transform3D]
+var _ruin_mm: MultiMesh
 
 const COLORS := {
 	WorldMap.Terrain.GROUND: Color(0.50, 0.46, 0.34),
@@ -138,7 +140,9 @@ func _build_props() -> void:
 					var w := 1.0 + map.hash01(cx, cz, 60) * 0.8
 					var hgt := 0.8 + map.hash01(cx, cz, 61) * 2.2
 					var b := Basis.from_euler(Vector3(0, (jx - 0.5) * 0.6, 0)).scaled(Vector3(w, hgt, w))
-					blocks.append(Transform3D(b, Vector3((cx + 0.5) * cs, y + hgt * 0.5 - 0.1, (cz + 0.5) * cs)))
+					var xf := Transform3D(b, Vector3((cx + 0.5) * cs, y + hgt * 0.5 - 0.1, (cz + 0.5) * cs))
+					_ruin_slots[cz * map.size + cx] = [blocks.size(), xf]
+					blocks.append(xf)
 	# Заводское здание и труба в центре.
 	var fc := map.factory_cell
 	var fp := map.cell_center(fc.x, fc.y)
@@ -161,6 +165,8 @@ func _build_props() -> void:
 	_make_multimesh("Rocks", rock, Color(0.45, 0.45, 0.45), rocks)
 
 	_make_multimesh("Ruins", BoxMesh.new(), Color(0.42, 0.40, 0.38), blocks)
+	var ruins_node := get_node_or_null("Ruins") as MultiMeshInstance3D
+	_ruin_mm = ruins_node.multimesh if ruins_node != null else null
 
 	var cyl := CylinderMesh.new()
 	cyl.top_radius = 0.4
@@ -169,3 +175,15 @@ func _build_props() -> void:
 	cyl.radial_segments = 6
 	cyl.rings = 1
 	_make_multimesh("Chimney", cyl, Color(0.33, 0.30, 0.28), chim)
+
+
+## Показывает блоки только активных руин (разобранные/восстановленные скрываются).
+func sync_ruins(con: ConstructionSystem) -> void:
+	if _ruin_mm == null:
+		return
+	for cell_idx in _ruin_slots:
+		var slot: Array = _ruin_slots[cell_idx]
+		var xf: Transform3D = slot[1]
+		if not con.is_ruin_active(cell_idx):
+			xf = Transform3D(Basis.from_scale(Vector3.ZERO), xf.origin)
+		_ruin_mm.set_instance_transform(slot[0], xf)

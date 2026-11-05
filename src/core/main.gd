@@ -6,6 +6,9 @@ const DEFAULT_WORLD_SEED := 20260401
 var world_map: WorldMap
 var world_view: WorldView
 var economy: EconomySystem
+var construction: ConstructionSystem
+var buildings_view: BuildingsView
+var build_controller: BuildController
 
 ## Плейсхолдеры баланса стартового склада.
 const START_STORAGE_CAPACITY := 500
@@ -21,13 +24,24 @@ func _ready() -> void:
 	economy = EconomySystem.new(world_map)
 	SimRunner.sim.register_system(economy)
 	_create_starting_storage()
+	construction = ConstructionSystem.new(world_map, economy)
+	SimRunner.sim.register_system(construction)
+	construction.attach(SimRunner.sim)
 	world_view = WorldView.new()
 	world_view.name = "World"
 	add_child(world_view)
 	world_view.build(world_map)
+	buildings_view = BuildingsView.new()
+	buildings_view.name = "Buildings"
+	add_child(buildings_view)
+	buildings_view.setup(construction)
 	var rig: CameraRig = $CameraRig
 	rig.setup(world_map, $CameraRig/Camera3D)
 	SimRunner.sim.register_system(rig.save_system)
+	build_controller = BuildController.new()
+	build_controller.name = "BuildController"
+	add_child(build_controller)
+	build_controller.setup(construction, $CameraRig/Camera3D, $UI/HUD, world_view, SimRunner.sim)
 	print("LongDarks: main scene ready, world %dx%d, terrain verts %d" % [world_map.size, world_map.size, world_view.terrain_vertex_count])
 
 

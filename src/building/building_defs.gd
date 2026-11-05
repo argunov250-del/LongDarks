@@ -121,6 +121,15 @@ static func is_restorable(id: StringName) -> bool:
 	return _DEFS.has(id) and id != &"izba" and id != &"stone_house"
 
 
+## Номер звена в цепочке улучшений (0 — первое/не в цепочке).
+static func upgrade_tier(id: StringName) -> int:
+	var n := 0
+	for k in _DEFS:
+		if _DEFS[k][5] == id:
+			n = upgrade_tier(k) + 1
+	return n
+
+
 static func storage_capacity(id: StringName) -> int:
 	return _DEFS[id][7].get("storage", 0) if _DEFS.has(id) else 0
 
