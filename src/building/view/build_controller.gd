@@ -346,9 +346,17 @@ func villager_card_text(v: Villager) -> String:
 	var t := "%s%s\n%s, %s, %s" % [v.display_name, " (герой)" if v.is_hero else "", v.profession_name(), VillagerDefs.sex_label(v.sex), VillagerDefs.age_text(v.age)]
 	t += "\nЧерты: " + ", ".join(traits)
 	t += "\nСейчас: " + villagers.task_text(v)
+	var warn := NeedsDefs.warning_text(v.needs, v.sick)
+	t += "\nПотребности:" + (" " + warn if warn != "" else "") + "\n" + NeedsDefs.card_lines(v.needs)
+	t += "\nЖильё: " + _home_name(v)
 	t += "\nНавыки:\n" + SkillDefs.card_lines(v.skills)
 	t += "\n" + v.backstory
 	return t
+
+
+func _home_name(v: Villager) -> String:
+	var b := con.get_building(v.home_id) if v.home_id > 0 else null
+	return "бездомный" if b == null else BuildingDefs.display_name(b.type)
 
 
 func _show_info() -> void:
@@ -422,6 +430,8 @@ func _building_text(b: Building) -> String:
 			return t + "\n" + production_text(b.id)
 		if villagers != null and (BuildingDefs.is_housing(b.type) or BuildingDefs.is_canteen(b.type)):
 			return t + "\nГотово\n" + household_text(b)
+		if villagers != null and b.type == &"hospital":
+			return t + "\nГотово\n" + hospital_text(b)
 		return t + "\nГотово"
 	t += "\n%s: %d%%" % [BuildingDefs.STAGE_NAMES[b.stage], roundi(b.stage_fraction() * 100.0)]
 	match b.blocked:
@@ -432,6 +442,13 @@ func _building_text(b: Building) -> String:
 		&"forest":
 			t += " — ждёт вырубки"
 	return t
+
+
+func hospital_text(b: Building) -> String:
+	var n := villagers.needs
+	var pats := n.patients(b.id)
+	var staff := "персонал на месте" if n.hospital_staffed(b.id) else "нет персонала"
+	return "Койки: %d/%d\nПерсонал: %s" % [pats.size(), NeedsDefs.HOSPITAL_BEDS, staff]
 
 
 const GARDEN_TEXT := {&"empty": "пусто", &"growing": "растёт", &"ripe": "созрел"}
@@ -452,7 +469,12 @@ func household_text(b: Building) -> String:
 		return ""
 	if h.kind == &"canteen":
 		return "Вода: %d/%d\nЕда: %s (%d/%d)" % [h.water, h.water_cap, _food_text(h), h.food.used(), h.food.capacity]
-	var t := "Печь: %d/%d дров\nПоленница: %d/%d" % [h.stove, hs.stove_capacity(b.id), h.woodpile, hs.woodpile_capacity(b.id)]
+	var names: Array[String] = []
+	for r in villagers.needs.residents(b.id):
+		names.append(r.display_name)
+	var t := "Жильцы: %d/%d%s" % [names.size(), villagers.needs.capacity(b.id), (" — " + ", ".join(names)) if not names.is_empty() else ""]
+	t += "\nТепло: %d%% (печь %s)" % [roundi(h.warmth * 100.0), "горит" if h.lit() else "не горит"]
+	t += "\nПечь: %d/%d дров\nПоленница: %d/%d" % [h.stove, hs.stove_capacity(b.id), h.woodpile, hs.woodpile_capacity(b.id)]
 	t += "\nОгород: %s" % GARDEN_TEXT.get(h.garden_state, "")
 	if h.garden_state == &"growing":
 		t += " (%s, %d%%)" % [ResourceDefs.display_name(h.garden_crop), roundi(h.garden_fraction() * 100.0)]

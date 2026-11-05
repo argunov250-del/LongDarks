@@ -73,10 +73,28 @@ func bind(system: VillagerSystem, sim: Simulation) -> void:
 	vs = system
 	if sim != null:
 		sim.bus.subscribe(VillagerSystem.TOPIC_ARRIVED, _on_arrived)
+		sim.bus.subscribe(VillagerSystem.TOPIC_SICK, _on_sick)
+		sim.bus.subscribe(VillagerSystem.TOPIC_RECOVERED, _on_recovered)
+		sim.bus.subscribe(VillagerSystem.TOPIC_DIED, _on_died)
 
 
 func _on_arrived(p: Dictionary) -> void:
 	show_toast("Прибыл новичок: %s, %s" % [p.get("name", "?"), VillagerDefs.profession_name(p.get("profession", &""))])
+
+
+func _on_sick(p: Dictionary) -> void:
+	show_toast("Заболел: %s, %s" % [p.get("name", "?"), VillagerDefs.profession_name(p.get("profession", &""))])
+
+
+func _on_recovered(p: Dictionary) -> void:
+	show_toast("Выздоровел: %s" % p.get("name", "?"))
+
+
+const DEATH_CAUSES := {&"sickness": "от болезни", &"food": "от голода", &"water": "от жажды", &"warmth": "от холода", &"rest": "от изнеможения"}
+
+
+func _on_died(p: Dictionary) -> void:
+	show_toast("Погиб %s: %s, %s" % [DEATH_CAUSES.get(p.get("cause", &""), ""), p.get("name", "?"), VillagerDefs.profession_name(p.get("profession", &""))])
 
 
 func show_toast(text: String) -> void:
@@ -168,6 +186,9 @@ func _refresh_villagers() -> void:
 		var v: Villager = vs.villagers[id]
 		var info: RichTextLabel = _rows[id]["info"]
 		var txt := "[b]%s[/b]%s — %s\n%s\n%s" % [v.display_name, " (герой)" if v.is_hero else "", v.profession_name(), traits_bbcode(v), vs.task_text(v)]
+		var warn := NeedsDefs.warning_text(v.needs, v.sick)
+		if warn != "":
+			txt += "\n[color=%s]%s[/color]" % [BAD_COLOR, warn]
 		if sort_cat != &"":
 			txt += "\n%s: %s %d%%" % [TaskDefs.NAMES[sort_cat], SkillDefs.bar(v.skill(sort_cat)), roundi(v.skill(sort_cat) * 100.0)]
 		if info.text != txt:

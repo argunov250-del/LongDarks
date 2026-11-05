@@ -99,7 +99,7 @@ func to_dict() -> Dictionary:
 		"profession": String(profession), "traits": tr, "skills": sk,
 		"hero": is_hero, "immortal": immortal, "arriving": arriving,
 		"pos": [pos.x, pos.y, pos.z], "facing": facing, "task": tk, "think_cd": think_cd,
-		"needs": nd, "sick": sick, "home_id": home_id, "sick_acc": sick_acc,
+		"at_site": at_site, "needs": nd, "sick": sick, "home_id": home_id, "sick_acc": sick_acc,
 	}
 
 
@@ -130,6 +130,7 @@ static func from_dict(d: Dictionary) -> Villager:
 		for n in NeedsDefs.NEEDS:
 			if d["needs"].has(String(n)):
 				v.set_need(n, float(d["needs"][String(n)]))
+	v.at_site = bool(d.get("at_site", false))
 	v.sick = bool(d.get("sick", false))
 	v.home_id = SaveManager.to_int(d.get("home_id"), 0)
 	v.sick_acc = float(d.get("sick_acc", 0.0))
