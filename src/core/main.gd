@@ -7,6 +7,7 @@ var world_map: WorldMap
 var world_view: WorldView
 var economy: EconomySystem
 var construction: ConstructionSystem
+var production: ProductionSystem
 var buildings_view: BuildingsView
 var build_controller: BuildController
 
@@ -27,6 +28,9 @@ func _ready() -> void:
 	construction = ConstructionSystem.new(world_map, economy)
 	SimRunner.sim.register_system(construction)
 	construction.attach(SimRunner.sim)
+	production = ProductionSystem.new(construction, economy)
+	SimRunner.sim.register_system(production)
+	production.attach(SimRunner.sim)
 	world_view = WorldView.new()
 	world_view.name = "World"
 	add_child(world_view)
@@ -42,6 +46,7 @@ func _ready() -> void:
 	build_controller.name = "BuildController"
 	add_child(build_controller)
 	build_controller.setup(construction, $CameraRig/Camera3D, $UI/HUD, world_view, SimRunner.sim)
+	build_controller.production = production
 	print("LongDarks: main scene ready, world %dx%d, terrain verts %d" % [world_map.size, world_map.size, world_view.terrain_vertex_count])
 
 

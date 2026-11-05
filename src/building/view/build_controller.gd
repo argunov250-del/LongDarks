@@ -21,6 +21,7 @@ const REASON_TEXT := {
 }
 
 var con: ConstructionSystem
+var production: ProductionSystem  # опционально (main выставляет после setup)
 var camera: Camera3D
 var hud: Hud
 var world_view: WorldView
@@ -217,9 +218,14 @@ func _show_info() -> void:
 		if b == null:
 			clear_selection()
 			return
-		hud.show_actions(_building_text(b), [
-			[&"upgrade", _upgrade_label(b), con.can_upgrade(b.id)],
-			[&"close", "Закрыть", true]])
+		var acts: Array = []
+		if production != null and production.is_producing_building(b.id):
+			acts.append([&"pause", "Продолжить" if production.is_paused(b.id) else "Пауза", true])
+			if production.available_recipes(b.id).size() > 1:
+				acts.append([&"recipe", "Рецепт", true])
+		acts.append([&"upgrade", _upgrade_label(b), con.can_upgrade(b.id)])
+		acts.append([&"close", "Закрыть", true])
+		hud.show_actions(_building_text(b), acts)
 	elif selected_ruin >= 0:
 		if not con.is_ruin_active(selected_ruin):
 			clear_selection()
@@ -252,6 +258,8 @@ func _upgrade_label(b: Building) -> String:
 func _building_text(b: Building) -> String:
 	var t := BuildingDefs.display_name(b.type)
 	if b.is_done():
+		if production != null and production.is_producing_building(b.id):
+			return t + "\n" + production_text(b.id)
 		return t + "\nГотово"
 	t += "\n%s: %d%%" % [BuildingDefs.STAGE_NAMES[b.stage], roundi(b.stage_fraction() * 100.0)]
 	match b.blocked:
@@ -259,6 +267,27 @@ func _building_text(b: Building) -> String:
 			t += " — ждёт ресурсы: " + _cost_text(b.stage_cost())
 		&"frozen":
 			t += " — земля промёрзла"
+	return t
+
+
+const STALL_TEXT := {
+	&"no_input": "ждёт сырьё",
+	&"no_space": "нет места на складах",
+}
+
+
+## Строки состояния производства: рецепт, прогресс, причина простоя.
+func production_text(id: int) -> String:
+	var rid := production.recipe_of(id)
+	var t := "%s: %s -> %s" % [Recipes.display_name(rid), _cost_text(Recipes.inputs(rid)), _cost_text(Recipes.outputs(rid))]
+	t += "\nЦикл: %d%%" % roundi(production.progress_fraction(id) * 100.0)
+	if production.is_paused(id):
+		t += " — пауза"
+	elif production.stall_reason(id) != &"":
+		t += " — " + STALL_TEXT.get(production.stall_reason(id), "стоит")
+	var q := production.repair_queue(id)
+	if not q.is_empty():
+		t += "\nРемонт в очереди: %d" % q.size()
 	return t
 
 
@@ -273,6 +302,16 @@ func on_action(id: StringName) -> void:
 			cancel_placement()
 		&"close":
 			clear_selection()
+		&"pause":
+			if production != null:
+				production.toggle_pause(selected_building)
+			_show_info()
+		&"recipe":
+			if production != null:
+				var rs := production.available_recipes(selected_building)
+				var i := rs.find(production.recipe_of(selected_building))
+				production.set_recipe(selected_building, rs[(i + 1) % rs.size()])
+			_show_info()
 		&"upgrade":
 			con.upgrade(selected_building)
 			_show_info()
