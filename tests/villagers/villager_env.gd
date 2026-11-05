@@ -49,7 +49,7 @@ func place_near_hub(type: StringName, dx: float = 14.0, dz: float = 0.0) -> int:
 	var hub := vs.hub_position()
 	for k in 40:
 		var p := hub + Vector3(dx + k * 1.5, 0.0, dz + (k % 5) * 6.0)
-		if not con.footprint_tree_cells(Vector2(p.x, p.z), BuildingDefs.footprint(type), 0.0).is_empty():
+		if not con.placement_tree_cells(type, p, 0.0).is_empty():
 			continue  # без леса: тест не должен ждать вырубки
 		var id := con.place(type, p, 0.0)
 		if id > 0:

@@ -90,6 +90,10 @@ func building_at(p: Vector3, margin: float = 0.3) -> Building:
 	for b: Building in buildings.values():
 		if Footprint.contains(b.xz(), b.size(), b.rot, q, margin):
 			return b
+	for b: Building in buildings.values():  # двор тоже относится к дому (тап по двору выбирает дом)
+		for part in b.world_parts():
+			if part["kind"] == &"yard" and Footprint.contains(part["c"], part["size"], b.rot, q, 0.0):
+				return b
 	return null
 
 
@@ -126,35 +130,48 @@ func ruin_yield(rid: int) -> Dictionary:
 	return out
 
 
+## Двор не мешает колодцу: колодец можно ставить где угодно, в том числе внутри двора.
+static func _parts_compatible(t1: StringName, k1: StringName, t2: StringName, k2: StringName) -> bool:
+	return (k1 == &"yard" and BuildingDefs.is_well(t2) and k2 == &"body") or (k2 == &"yard" and BuildingDefs.is_well(t1) and k1 == &"body")
+
+
 ## Проверка места: {"ok": bool, "reason": &"" | &"outside" | &"water" | &"slope" | &"overlap"}. Лес не мешает: стройка ждёт вырубки.
+## Проверяются все части здания (основание и двор жилья).
 func validate_placement(type: StringName, pos: Vector3, rot: float, ignore_id: int = -1) -> Dictionary:
 	if not BuildingDefs.exists(type):
 		return {"ok": false, "reason": &"type"}
-	var size := BuildingDefs.footprint(type)
 	var c := Vector2(pos.x, pos.z)
-	var pts: Array[Vector2] = Footprint.corners(c, size, rot)
+	var parts := BuildingDefs.world_parts(type, c, rot)
 	var bounds := world.get_bounds().grow(-BuildingDefs.MAP_MARGIN)
-	for p in pts:
-		if not bounds.has_point(p):
-			return {"ok": false, "reason": &"outside"}
-	pts.append(c)
-	var lo := INF
-	var hi := -INF
-	for i in 4:  # середины сторон тоже: узкие здания (забор) могут пересекать воду между углами
-		pts.append((pts[i] + pts[(i + 1) % 4]) * 0.5)
-	for p in pts:
-		if world.is_water(p.x, p.y):
-			return {"ok": false, "reason": &"water"}
-		var h := world.height_at(p.x, p.y)
-		lo = minf(lo, h)
-		hi = maxf(hi, h)
-	if (hi - lo) / maxf(maxf(size.x, size.y), 0.01) > BuildingDefs.MAX_SLOPE:
-		return {"ok": false, "reason": &"slope"}
+	for part in parts:
+		for p in Footprint.corners(part["c"], part["size"], rot):
+			if not bounds.has_point(p):
+				return {"ok": false, "reason": &"outside"}
+	for part in parts:
+		var size: Vector2 = part["size"]
+		var pts: Array[Vector2] = Footprint.corners(part["c"], size, rot)
+		pts.append(part["c"])
+		var lo := INF
+		var hi := -INF
+		for i in 4:  # середины сторон тоже: узкие здания (забор) могут пересекать воду между углами
+			pts.append((pts[i] + pts[(i + 1) % 4]) * 0.5)
+		for p in pts:
+			if world.is_water(p.x, p.y):
+				return {"ok": false, "reason": &"water"}
+			var h := world.height_at(p.x, p.y)
+			lo = minf(lo, h)
+			hi = maxf(hi, h)
+		if (hi - lo) / maxf(maxf(size.x, size.y), 0.01) > BuildingDefs.MAX_SLOPE:
+			return {"ok": false, "reason": &"slope"}
 	for b: Building in buildings.values():
 		if b.id == ignore_id:
 			continue
-		if Footprint.overlaps(c, size, rot, b.xz(), b.size(), b.rot, BuildingDefs.BUILD_GAP):
-			return {"ok": false, "reason": &"overlap"}
+		for op in b.world_parts():
+			for np in parts:
+				if _parts_compatible(type, np["kind"], b.type, op["kind"]):
+					continue
+				if Footprint.overlaps(np["c"], np["size"], rot, op["c"], op["size"], b.rot, BuildingDefs.BUILD_GAP):
+					return {"ok": false, "reason": &"overlap"}
 	return {"ok": true, "reason": &""}
 
 
@@ -181,8 +198,18 @@ func footprint_tree_cells(c: Vector2, size: Vector2, rot: float) -> Array[Vector
 	return out
 
 
+## Клетки леса под всеми частями здания (основание и двор).
+func placement_tree_cells(type: StringName, pos: Vector3, rot: float) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	for part in BuildingDefs.world_parts(type, Vector2(pos.x, pos.z), rot):
+		for cell in footprint_tree_cells(part["c"], part["size"], rot):
+			if not out.has(cell):
+				out.append(cell)
+	return out
+
+
 func _building_tree_cells(b: Building) -> Array[Vector2i]:
-	return footprint_tree_cells(b.xz(), b.size(), b.rot)
+	return placement_tree_cells(b.type, b.position, b.rot)
 
 
 func ground_height(pos: Vector3) -> float:

@@ -2,7 +2,7 @@ class_name ResourceDefs
 extends RefCounted
 ## Каталог ресурсов. Только данные: id, название, категория, порча.
 
-enum Category { RAW, FOOD, FUEL, PART }
+enum Category { RAW, FOOD, FUEL, PART, WATER }
 
 ## Плейсхолдеры баланса: доля запаса, портящаяся за игровые сутки.
 const SPOIL_PER_DAY_FRESH := 0.30   # молоко, яйца, мясо, рыба
@@ -30,15 +30,23 @@ const _DEFS := {
 	&"mushrooms": ["грибы", Category.FOOD, SPOIL_PER_DAY_MEDIUM],
 	&"milk": ["молоко", Category.FOOD, SPOIL_PER_DAY_FRESH],
 	&"eggs": ["яйца", Category.FOOD, SPOIL_PER_DAY_FRESH],
+	&"vegetables": ["овощи", Category.FOOD, SPOIL_PER_DAY_MEDIUM],
 	# топливо
 	&"firewood": ["дрова", Category.FUEL, 0.0],
 	&"oil": ["масло", Category.FUEL, 0.0],
 	&"biodiesel": ["биодизель", Category.FUEL, 0.0],
 	&"alcohol": ["спирт", Category.FUEL, 0.0],
 	&"biogas": ["биогаз", Category.FUEL, 0.0],
+	# вода: только из колодцев, носится вёдрами; на склады не кладётся, не портится
+	&"water": ["вода", Category.WATER, 0.0],
 	# детали
 	&"spare_parts": ["запчасти", Category.PART, 0.0],
 }
+
+
+## Ресурсы, которые лежат только в запасах домов/столовых, но не на складах (вода из колодцев).
+static func is_warehouse_stockable(id: StringName) -> bool:
+	return id != &"water"
 
 
 static func all_ids() -> Array[StringName]:

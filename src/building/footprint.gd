@@ -39,3 +39,8 @@ static func overlaps(c1: Vector2, s1: Vector2, r1: float, c2: Vector2, s2: Vecto
 
 static func _radius(size: Vector2, rot: float, axis: Vector2) -> float:
 	return absf(axis_u(rot).dot(axis)) * size.x * 0.5 + absf(axis_v(rot).dot(axis)) * size.y * 0.5
+
+
+## Локальная точка (оси здания) -> мировая XZ.
+static func local_to_world(center: Vector2, rot: float, local: Vector2) -> Vector2:
+	return center + axis_u(rot) * local.x + axis_v(rot) * local.y

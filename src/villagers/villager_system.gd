@@ -27,7 +27,7 @@ var villagers: Dictionary = {}          # int id -> Villager (в порядке 
 var dog: Dog
 var priorities: Dictionary = {}         # StringName категория -> int 0..3
 var building_priorities: Dictionary = {} # int id здания -> int 0..3 (перекрывает категорию)
-var house_stock: Dictionary = {}        # int id жилья -> int дров (расход — шаг 11)
+var household: HouseholdSystem          # запасы домов и столовых, огороды, сараи (шаг 10b)
 var next_arrival_in: float = 0.0
 ## Экземплярные копии констант (тесты их подменяют).
 var arrival_min: float = VillagerDefs.ARRIVAL_MIN
@@ -51,6 +51,7 @@ func _init(world_in: WorldMap, economy_in: EconomySystem, construction_in: Const
 	construction = construction_in
 	production = production_in
 	pathfinder = Pathfinder.new(world)
+	household = HouseholdSystem.new(construction, economy)
 	construction.external_work = true
 	production.external_work = true
 	reset_priorities()
@@ -83,7 +84,7 @@ func start_new_game() -> void:
 	_next_id = 1
 	reset_priorities()
 	building_priorities.clear()
-	house_stock.clear()
+	household.load_state({})
 	var hero := Villager.generate(_rng(), {"sex": &"m", "profession": &"mechanic", "hero": true, "age": VillagerDefs.HERO_AGE})
 	hero.id = _next_id
 	_next_id += 1
@@ -158,7 +159,7 @@ func spawn_newcomer() -> Villager:
 	_next_id += 1
 	v.arriving = true
 	v.pos = _ground(_edge_spawn())
-	v.task = {"kind": &"arrive", "cat": &"", "key": "arrive", "target": 0, "phase": &"", "work": 0.0, "carry": 0, "src": 0}
+	v.task = {"kind": &"arrive", "cat": &"", "key": "arrive", "target": 0, "phase": &"", "work": 0.0, "carry": 0, "src": 0, "res": &"", "dest": &""}
 	v.think_cd = float(v.id % 10) * 0.1
 	villagers[v.id] = v
 	_emit(TOPIC_ARRIVED, {"id": v.id, "name": v.display_name, "profession": v.profession})
@@ -229,20 +230,39 @@ func priority_of(cat: StringName, building_id: int = -1) -> int:
 	return get_priority(cat)
 
 
-# ---------- дрова в жилье ----------
+# ---------- запасы жилья ----------
 
+## Вместимость поленницы жилья.
 func firewood_capacity(building_id: int) -> int:
 	var b := construction.get_building(building_id)
 	return BuildingDefs.firewood_capacity(b.type) if b != null and b.is_done() else 0
 
 
+## Дров на поленнице (в печи — stove_stock).
 func firewood_stock(building_id: int) -> int:
-	return house_stock.get(building_id, 0)
+	var h := household.home(building_id)
+	return h.woodpile if h != null else 0
+
+
+func stove_stock(building_id: int) -> int:
+	var h := household.home(building_id)
+	return h.stove if h != null else 0
+
+
+## Для шага 11: есть ли еда в доме / ближайшая столовая с едой для жителя (id здания или -1).
+func house_has_food(building_id: int) -> bool:
+	return household.house_has_food(building_id)
+
+
+func canteen_for(v: Villager) -> int:
+	return household.canteen_for(v)
 
 
 # ---------- скорость и пригодность ----------
 
 func profession_multiplier(v: Villager, cat: StringName, building_type: StringName = &"") -> float:
+	if cat == TaskDefs.CHORES and building_type == &"canteen":
+		return TaskDefs.CANTEEN_COOK_BONUS if v.profession == &"cook" else 1.0
 	if cat == TaskDefs.PRODUCTION:
 		return TaskDefs.PRODUCTION_MATCH_BONUS if TaskDefs.PRODUCTION_PROFESSION.get(building_type, &"") == v.profession else 1.0
 	return (TaskDefs.PROFESSION_BONUS.get(cat, {}) as Dictionary).get(v.profession, 1.0)
@@ -303,8 +323,8 @@ func _ensure_jobs() -> void:
 	_build_jobs()
 
 
-func _job(key: String, cat: StringName, kind: StringName, target: int, pos: Vector3, cap: int, pri: int, tcat: StringName, btype: StringName = &"") -> void:
-	var j := {"key": key, "cat": cat, "kind": kind, "target": target, "pos": pos, "cap": cap, "pri": pri, "tcat": tcat, "btype": btype}
+func _job(key: String, cat: StringName, kind: StringName, target: int, pos: Vector3, cap: int, pri: int, tcat: StringName, btype: StringName = &"", dest: StringName = &"") -> void:
+	var j := {"key": key, "cat": cat, "kind": kind, "target": target, "pos": pos, "cap": cap, "pri": pri, "tcat": tcat, "btype": btype, "dest": dest}
 	_jobs.append(j)
 	_job_by_key[key] = j
 
@@ -334,22 +354,65 @@ func _build_jobs() -> void:
 	_build_chore_jobs()
 
 
+func _day() -> int:
+	return _sim.clock.get_day() if _sim != null else 0
+
+
 func _build_chore_jobs() -> void:
-	var cp := priority_of(TaskDefs.CHORES)
-	if cp > 0 and economy.total(&"logs") > TaskDefs.CHORE_LOGS_RESERVE \
-			and economy.total(&"firewood") < TaskDefs.FIREWOOD_STORAGE_TARGET \
-			and economy.total_free_space() >= TaskDefs.FIREWOOD_PER_LOG - 1:
-		for s in economy.storages:
-			if s.amount(&"logs") > 0:
-				_job("c:chop:%d" % s.id, TaskDefs.CHORES, &"chop", s.id, s.position, TaskDefs.CHORE_SLOTS, cp, TaskDefs.CHORES)
-	if economy.total(&"firewood") > 0:
-		for id in construction.buildings:
-			var b: Building = construction.buildings[id]
-			if not b.is_done() or not BuildingDefs.is_housing(b.type):
-				continue
-			var p := priority_of(TaskDefs.CHORES, b.id)
-			if p > 0 and firewood_stock(b.id) < firewood_capacity(b.id):
-				_job("c:carry:%d" % b.id, TaskDefs.CHORES, &"carry", b.id, b.position, TaskDefs.CHORE_SLOTS, p, TaskDefs.CHORES)
+	household.sync()
+	var well_ok := _has_well()
+	var logs_ok := economy.total(&"logs") > TaskDefs.CHORE_LOGS_RESERVE
+	var firewood_ok := economy.total(&"firewood") > 0
+	var day := _day()
+	for id in household.home_ids():
+		var b := construction.get_building(id)
+		if b == null or not b.is_done():
+			continue
+		var p := priority_of(TaskDefs.CHORES, id)
+		if p <= 0:
+			continue
+		var cap := TaskDefs.CHORE_SLOTS
+		if household.wood_room(id) > 0:
+			if logs_ok:
+				_job("c:chop:%d" % id, TaskDefs.CHORES, &"chop", id, household.chop_pos(b), cap, p, TaskDefs.CHORES)
+			if firewood_ok:
+				_job("c:carry:%d" % id, TaskDefs.CHORES, &"carry", id, b.position, cap, p, TaskDefs.CHORES)
+		if well_ok and household.water_room(id) > 0:
+			_job("c:water:%d" % id, TaskDefs.CHORES, &"water", id, b.position, cap, p, TaskDefs.CHORES, &"", &"house")
+		if household.can_plant(id, day) or household.can_harvest(id, day):
+			_job("c:garden:%d" % id, TaskDefs.CHORES, &"garden", id, household.garden_pos(b), cap, p, TaskDefs.CHORES)
+	var food_ok := _storage_with_food(Vector3.ZERO) > 0
+	for id in household.canteen_ids():
+		var b := construction.get_building(id)
+		if b == null or not b.is_done():
+			continue
+		var p := priority_of(TaskDefs.CHORES, id)
+		if p <= 0:
+			continue
+		var h := household.canteen(id)
+		if well_ok and household.water_room(id) > 0:
+			_job("c:water:%d" % id, TaskDefs.CHORES, &"water", id, b.position, TaskDefs.CHORE_SLOTS, p, TaskDefs.CHORES, &"canteen", &"canteen")
+		if food_ok and h.food.free_space() > 0:
+			_job("c:food:%d" % id, TaskDefs.CHORES, &"food", id, b.position, TaskDefs.CHORE_SLOTS, p, TaskDefs.CHORES, &"canteen", &"canteen")
+
+
+func _has_well() -> bool:
+	return household.nearest_well(Vector3.ZERO) >= 0
+
+
+## Ближайший склад с любой едой (id) или 0.
+func _storage_with_food(from: Vector3) -> int:
+	var best := 0
+	var bd := INF
+	for s in economy.storages:
+		for res in s.contents:
+			if ResourceDefs.category(res) == ResourceDefs.Category.FOOD:
+				var d := Vector2(s.position.x - from.x, s.position.z - from.z).length()
+				if d < bd:
+					bd = d
+					best = s.id
+				break
+	return best
 
 
 func _recount_claims() -> void:
@@ -394,6 +457,7 @@ func _think(v: Villager) -> void:
 	_recount_claims()
 	var best := _pick(v, true)
 	if best.is_empty():
+		_drop_load(v)
 		v.task = {}
 		return
 	if best["key"] != v.task.get("key", ""):
@@ -408,11 +472,24 @@ func assign_now(v: Villager) -> void:
 
 
 func _assign(v: Villager, job: Dictionary) -> void:
+	_drop_load(v)
 	v.task = {"kind": job["kind"], "cat": job["cat"], "key": job["key"], "target": job["target"],
-		"phase": &"", "work": 0.0, "carry": 0, "src": 0}
-	if job["kind"] == &"carry":
-		v.task["phase"] = &"fetch"
-		v.task["src"] = _nearest_storage_with(&"firewood", v.pos)
+		"phase": &"", "work": 0.0, "carry": 0, "src": 0, "res": &"", "dest": job.get("dest", &"")}
+	match job["kind"]:
+		&"carry":
+			v.task["phase"] = &"fetch"
+			v.task["src"] = _nearest_storage_with(&"firewood", v.pos)
+		&"chop":
+			v.task["phase"] = &"fetch"
+			v.task["src"] = _nearest_storage_with(&"logs", v.pos)
+		&"food":
+			v.task["phase"] = &"fetch"
+			v.task["src"] = _storage_with_food(v.pos)
+		&"water":
+			v.task["phase"] = &"fetch"
+			v.task["src"] = household.nearest_well(v.pos)  # id здания-колодца
+		&"garden":
+			v.task["phase"] = &"work"
 	v.path.clear()
 	v.at_site = false
 
@@ -455,17 +532,8 @@ func _task_pos(v: Villager, t: Dictionary) -> Variant:
 			return world.cell_center(c.x, c.y)
 		&"dismantle":
 			return construction.ruins[t["target"]]["pos"] if construction.ruins.has(t["target"]) else null
-		&"chop":
-			var s := economy.get_storage(t["target"])
-			return s.position if s != null else null
-		&"carry":
-			if t["phase"] == &"deliver":
-				var h := construction.get_building(t["target"])
-				return h.position if h != null else null
-			var s := economy.get_storage(t["src"])
-			if s == null:
-				return hub_position()
-			return s.position
+		&"chop", &"carry", &"water", &"food", &"garden":
+			return _haul_pos(t)
 	return null
 
 
@@ -478,22 +546,62 @@ func _task_radius(t: Dictionary) -> float:
 			return _building_radius(b) if b != null else 1.0
 		&"fell", &"dismantle":
 			return 1.7
+		&"chop", &"carry", &"water", &"food", &"garden":
+			return _haul_radius(t)
+	return 1.0
+
+
+## Где происходит текущая фаза бытовой задачи (дрова, вода, еда, огород); null — цель потеряна.
+func _haul_pos(t: Dictionary) -> Variant:
+	var house := construction.get_building(t["target"])
+	match t["phase"]:
+		&"fetch":
+			if t["kind"] == &"water":
+				var w := construction.get_building(t["src"])
+				return w.position if w != null else null
+			var s := economy.get_storage(t["src"])
+			return s.position if s != null else hub_position()
 		&"chop":
-			var s := economy.get_storage(t["target"])
-			return _storage_radius(s) if s != null else 2.5
-		&"carry":
-			if t["phase"] == &"deliver":
-				var h := construction.get_building(t["target"])
-				return _building_radius(h) if h != null else 1.0
+			return household.chop_pos(house) if house != null else null
+		&"work":
+			return household.garden_pos(house) if house != null else null
+		&"deliver":
+			if house == null:
+				return null
+			match t["dest"]:
+				&"woodpile":
+					return household.woodpile_pos(house)
+				&"canteen":
+					return house.position
+				_:
+					return household.door_pos(house)
+	return null
+
+
+func _haul_radius(t: Dictionary) -> float:
+	match t["phase"]:
+		&"fetch":
+			if t["kind"] == &"water":
+				var w := construction.get_building(t["src"])
+				return _building_radius(w) if w != null else 1.0
 			var s := economy.get_storage(t["src"])
 			return _storage_radius(s) if s != null else 2.5
-	return 1.0
+		&"deliver":
+			if t["dest"] == &"canteen":
+				var c := construction.get_building(t["target"])
+				return _building_radius(c) if c != null else 1.0
+	return HouseholdDefs.SPOT_RADIUS
+
+
+## Задача уже взяла груз/дошла до дела: не пересматривается, пока не доставит.
+func _committed(t: Dictionary) -> bool:
+	return t.get("kind", &"") == &"arrive" or t.get("phase", &"") == &"deliver"
 
 
 func _alive(t: Dictionary) -> bool:
 	if t["kind"] == &"arrive":
 		return true
-	if t["kind"] == &"carry" and t["phase"] == &"deliver":
+	if t["phase"] == &"chop" or t["phase"] == &"deliver":
 		var h := construction.get_building(t["target"])
 		return h != null and h.is_done()
 	_ensure_jobs()
@@ -508,6 +616,7 @@ func tick(sim: Simulation, dt: float) -> void:
 		return
 	_time += dt
 	_jobs_age += 1
+	household.tick(sim, dt)
 	next_arrival_in -= dt
 	if next_arrival_in <= 0.0:
 		spawn_newcomer()
@@ -520,8 +629,7 @@ func tick(sim: Simulation, dt: float) -> void:
 func _tick_villager(v: Villager, dt: float) -> void:
 	v.think_cd -= dt
 	var t := v.task
-	var carrying: bool = t.get("kind", &"") == &"carry" and t.get("phase", &"") == &"deliver"
-	if t.get("kind", &"") != &"arrive" and not carrying and v.think_cd <= 0.0:
+	if not _committed(t) and v.think_cd <= 0.0:
 		v.think_cd = TaskDefs.ASSIGN_INTERVAL
 		_think(v)
 		t = v.task
@@ -546,10 +654,16 @@ func _tick_villager(v: Villager, dt: float) -> void:
 		_work(v, t, dt)
 
 
-func _abandon(v: Villager) -> void:
+## Несомое возвращается на склад (вода выливается).
+func _drop_load(v: Villager) -> void:
 	var t := v.task
-	if t.get("kind", &"") == &"carry" and int(t.get("carry", 0)) > 0:
-		economy.deposit(&"firewood", int(t["carry"]))  # несомое возвращается на склад
+	if int(t.get("carry", 0)) > 0:
+		economy.deposit(t.get("res", &"firewood"), int(t["carry"]))
+		t["carry"] = 0
+
+
+func _abandon(v: Villager) -> void:
+	_drop_load(v)
 	v.task = {}
 	v.think_cd = 0.0
 	v.at_site = false
@@ -610,18 +724,14 @@ func _work(v: Villager, t: Dictionary, dt: float) -> void:
 			var cat := TaskDefs.REPAIR if production.active_job_kind(b.id) == &"repair" else TaskDefs.PRODUCTION
 			production.add_work(b.id, work_rate(v, cat, b.type) * dt)
 			train(v, cat, dt)
-		&"chop":
+		&"chop", &"carry", &"water", &"food", &"garden":
 			t["work"] += work_rate(v, TaskDefs.CHORES) * dt
 			train(v, TaskDefs.CHORES, dt)
-			if t["work"] >= TaskDefs.CHOP_WORK:
-				_finish_chop(v, t)
-		&"carry":
-			t["work"] += work_rate(v, TaskDefs.CHORES) * dt
-			train(v, TaskDefs.CHORES, dt)
-			if t["phase"] == &"fetch" and t["work"] >= TaskDefs.PICKUP_WORK:
-				_finish_pickup(v, t)
-			elif t["phase"] == &"deliver" and t["work"] >= TaskDefs.DELIVER_WORK:
-				_finish_delivery(v, t)
+			var need := _phase_work(t)
+			if need < 0.0:
+				_end_task(v)
+			elif t["work"] >= need:
+				_finish_phase(v, t)
 
 
 func _end_task(v: Villager) -> void:
@@ -629,33 +739,131 @@ func _end_task(v: Villager) -> void:
 	v.think_cd = 0.0
 
 
-## Бревно -> дрова. Атомарно: либо оба шага, либо ничего.
-func _finish_chop(v: Villager, _t: Dictionary) -> void:
-	if economy.total(&"logs") >= 1 and economy.total_free_space() + 1 >= TaskDefs.FIREWOOD_PER_LOG:
-		economy.consume({&"logs": 1})
-		economy.deposit(&"firewood", TaskDefs.FIREWOOD_PER_LOG)
-	_end_task(v)
+## Работа текущей фазы бытовой задачи; -1 — делать больше нечего (задача снимается).
+func _phase_work(t: Dictionary) -> float:
+	match t["phase"]:
+		&"fetch":
+			return HouseholdDefs.WELL_DRAW_WORK if t["kind"] == &"water" else TaskDefs.PICKUP_WORK
+		&"chop":
+			return TaskDefs.CHOP_WORK * float(int(t["carry"]))
+		&"deliver":
+			return TaskDefs.DELIVER_WORK
+		&"work":
+			var h := household.home(t["target"])
+			if h == null:
+				return -1.0
+			match h.garden_state:
+				Household.GARDEN_EMPTY:
+					return HouseholdDefs.PLANT_WORK
+				Household.GARDEN_RIPE:
+					return HouseholdDefs.HARVEST_WORK
+			return -1.0
+	return -1.0
 
 
-func _finish_pickup(v: Villager, t: Dictionary) -> void:
-	var room := firewood_capacity(t["target"]) - firewood_stock(t["target"])
-	var n := mini(mini(TaskDefs.CARRY_CAPACITY, room), economy.total(&"firewood"))
-	if n <= 0:
-		_end_task(v)
-		return
-	economy.consume({&"firewood": n})
-	t["carry"] = n
+func _finish_phase(v: Villager, t: Dictionary) -> void:
+	match t["phase"]:
+		&"fetch":
+			_finish_fetch(v, t)
+		&"chop":
+			t["carry"] = int(t["carry"]) * TaskDefs.FIREWOOD_PER_LOG
+			t["res"] = &"firewood"
+			_start_deliver(v, t)
+		&"deliver":
+			_finish_delivery(v, t)
+		&"work":
+			var id: int = t["target"]
+			if household.home(id).garden_state == Household.GARDEN_EMPTY:
+				household.plant(id)
+				_end_task(v)
+			else:
+				var crop := household.harvest(id)
+				if crop.is_empty():
+					_end_task(v)
+					return
+				t["res"] = crop["res"]
+				t["carry"] = crop["n"]
+				t["dest"] = &"house"
+				_start_deliver(v, t)
+
+
+func _start_deliver(v: Villager, t: Dictionary) -> void:
+	if t["res"] == &"firewood":
+		t["dest"] = &"stove" if household.stove_demand(t["target"]) > 0 else &"woodpile"
 	t["phase"] = &"deliver"
 	t["work"] = 0.0
 	v.path.clear()
 
 
+## Погрузка на источнике: склад (дрова, брёвна, еда) или колодец (вода в вёдра).
+func _finish_fetch(v: Villager, t: Dictionary) -> void:
+	var target: int = t["target"]
+	var n := 0
+	match t["kind"]:
+		&"carry":
+			n = mini(mini(TaskDefs.CARRY_CAPACITY, household.wood_room(target)), economy.total(&"firewood"))
+			t["res"] = &"firewood"
+			if n > 0:
+				economy.consume({&"firewood": n})
+		&"chop":
+			var spare := economy.total(&"logs") - TaskDefs.CHORE_LOGS_RESERVE
+			var want := int(ceil(float(household.wood_room(target)) / float(TaskDefs.FIREWOOD_PER_LOG)))
+			n = mini(mini(TaskDefs.CHOP_LOGS_PER_TRIP, spare), want)
+			t["res"] = &"logs"
+			if n > 0:
+				economy.consume({&"logs": n})
+		&"water":
+			n = mini(HouseholdDefs.WATER_CARRY, household.water_room(target))
+			t["res"] = &"water"
+		&"food":
+			var s := economy.get_storage(t["src"])
+			var res := _best_food(s)
+			if res != &"":
+				n = mini(mini(TaskDefs.CARRY_CAPACITY, s.amount(res)), household.canteen(target).food.free_space())
+				t["res"] = res
+				if n > 0:
+					s.remove(res, n)
+	if n <= 0:
+		_end_task(v)
+		return
+	t["carry"] = n
+	if t["kind"] == &"chop":
+		t["phase"] = &"chop"
+		t["work"] = 0.0
+		v.path.clear()
+	else:
+		if t["kind"] == &"water":
+			t["dest"] = &"canteen" if household.canteen(target) != null else &"house"
+		_start_deliver(v, t)
+
+
+func _best_food(s: Storage) -> StringName:
+	var best := &""
+	var most := 0
+	if s == null:
+		return best
+	for res in s.contents:
+		if ResourceDefs.category(res) == ResourceDefs.Category.FOOD and s.contents[res] > most:
+			most = s.contents[res]
+			best = res
+	return best
+
+
+## Выгрузка: дрова в печь/на поленницу, вода и еда в запас дома или столовой.
 func _finish_delivery(v: Villager, t: Dictionary) -> void:
-	var cap := firewood_capacity(t["target"])
-	var add := mini(int(t["carry"]), maxi(0, cap - firewood_stock(t["target"])))
-	house_stock[t["target"]] = firewood_stock(t["target"]) + add
-	if int(t["carry"]) > add:
-		economy.deposit(&"firewood", int(t["carry"]) - add)
+	var target: int = t["target"]
+	var n := int(t["carry"])
+	var res: StringName = t["res"]
+	var added := 0
+	match res:
+		&"firewood":
+			added = household.add_firewood(target, n, t["dest"] == &"stove")
+		&"water":
+			added = household.add_water(target, n)
+		_:
+			added = household.add_food(target, res, n)
+	if n > added and res != &"water":
+		economy.deposit(res, n - added)  # не влезло — назад на склад
 	t["carry"] = 0
 	_emit(TOPIC_CHANGED, {})
 	_end_task(v)
@@ -682,9 +890,25 @@ func task_text(v: Villager) -> String:
 			var b := construction.get_building(t["target"])
 			txt = ("Ремонт: " if production.active_job_kind(t["target"]) == &"repair" else "Работа: ") + (BuildingDefs.display_name(b.type) if b != null else "?")
 		&"chop":
-			txt = "Колет дрова"
+			if t["phase"] == &"deliver":
+				txt = "Несёт дрова к печи" if t["dest"] == &"stove" else "Складывает дрова на поленницу"
+			else:
+				txt = "Колет дрова" if t["phase"] == &"chop" else "Берёт брёвна на складе"
 		&"carry":
-			txt = "Несёт дрова в дом" if t["phase"] == &"deliver" else "Берёт дрова на складе"
+			if t["phase"] == &"deliver":
+				txt = "Несёт дрова к печи" if t["dest"] == &"stove" else "Складывает дрова на поленницу"
+			else:
+				txt = "Берёт дрова на складе"
+		&"water":
+			txt = ("Несёт воду в столовую" if t["dest"] == &"canteen" else "Несёт воду в дом") if t["phase"] == &"deliver" else "Набирает воду из колодца"
+		&"food":
+			txt = "Несёт еду в столовую" if t["phase"] == &"deliver" else "Берёт еду на складе"
+		&"garden":
+			if t["phase"] == &"deliver":
+				txt = "Несёт урожай в дом"
+			else:
+				var h := household.home(t["target"])
+				txt = "Сажает на огороде" if h != null and h.garden_state == Household.GARDEN_EMPTY else "Собирает урожай"
 	if t["kind"] != &"arrive" and not v.at_site:
 		txt = "Идёт: " + txt
 	return txt
@@ -706,20 +930,17 @@ func save_state() -> Dictionary:
 	var bp := {}
 	for k in building_priorities:
 		bp[str(k)] = building_priorities[k]
-	var hs := {}
-	for k in house_stock:
-		hs[str(k)] = house_stock[k]
 	return {
 		"next_id": _next_id, "next_arrival_in": next_arrival_in,
 		"villagers": list, "dog": dog.to_dict() if dog != null else {},
-		"priorities": pr, "building_priorities": bp, "house_stock": hs,
+		"priorities": pr, "building_priorities": bp, "household": household.save_state(),
 	}
 
 
 func load_state(d: Dictionary) -> void:
 	villagers.clear()
 	building_priorities.clear()
-	house_stock.clear()
+	household.load_state(d.get("household", {}) if d.get("household") is Dictionary else {})
 	reset_priorities()
 	if d.get("villagers") is Array:
 		for e in d["villagers"]:
@@ -734,9 +955,6 @@ func load_state(d: Dictionary) -> void:
 	if d.get("building_priorities") is Dictionary:
 		for k in d["building_priorities"]:
 			building_priorities[SaveManager.to_int(k, -1)] = clampi(SaveManager.to_int(d["building_priorities"][k], 1), TaskDefs.PRIORITY_MIN, TaskDefs.PRIORITY_MAX)
-	if d.get("house_stock") is Dictionary:
-		for k in d["house_stock"]:
-			house_stock[SaveManager.to_int(k, -1)] = maxi(0, SaveManager.to_int(d["house_stock"][k], 0))
 	dog = Dog.new()
 	if d.get("dog") is Dictionary and not (d["dog"] as Dictionary).is_empty():
 		dog.load_dict(d["dog"])

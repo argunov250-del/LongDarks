@@ -15,7 +15,7 @@ func _snap(e: Env) -> Dictionary:
 		list.append([v.id, v.display_name, String(v.sex), v.age, v.backstory, String(v.profession), v.traits.map(func(t): return String(t)),
 			v.is_hero, v.immortal, v.arriving, snappedf(v.pos.x, 0.001), snappedf(v.pos.z, 0.001), v.task.duplicate()])
 	return {"list": list, "dog": [snappedf(vs.dog.pos.x, 0.001), snappedf(vs.dog.pos.z, 0.001), vs.dog.anxious_level],
-		"prio": vs.priorities.duplicate(), "bprio": vs.building_priorities.duplicate(), "stock": vs.house_stock.duplicate(),
+		"prio": vs.priorities.duplicate(), "bprio": vs.building_priorities.duplicate(), "stock": vs.household.save_state(),
 		"arrival": snappedf(vs.next_arrival_in, 0.001)}
 
 
@@ -32,7 +32,7 @@ func test_round_trip_through_save_file() -> void:
 	e.vs.set_priority(TaskDefs.CHORES, 0)
 	e.vs.set_building_priority(house, 1)
 	e.vs.dog.set_anxious(0.6)
-	e.vs.house_stock[house] = 4
+	e.vs.household.home(house).woodpile = 4
 	e.run(25.0)
 	var busy := 0
 	for v: Villager in e.vs.villager_list():

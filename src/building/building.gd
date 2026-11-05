@@ -22,6 +22,11 @@ func size() -> Vector2:
 	return BuildingDefs.footprint(type)
 
 
+## Мировые прямоугольники (основание и двор): [{"c": Vector2, "size": Vector2, "kind": StringName}].
+func world_parts() -> Array[Dictionary]:
+	return BuildingDefs.world_parts(type, xz(), rot)
+
+
 func xz() -> Vector2:
 	return Vector2(position.x, position.z)
 

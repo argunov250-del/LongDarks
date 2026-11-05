@@ -200,7 +200,7 @@ func test_suitability_affects_speed() -> void:
 
 func test_construction_progresses_only_with_villager_on_site() -> void:
 	var e := Env.new(5000, {&"logs": 50, &"planks": 50, &"stone": 50})
-	var id := e.place_near_hub(&"dugout", 40.0, 0.0)
+	var id := e.place_near_hub(&"sawmill", 40.0, 0.0)  # без двора: рядом с центром нет леса
 	var b := e.con.get_building(id)
 	var h := e.hero()
 	# Без работников стадия оплачена, но работа не идёт.
@@ -259,7 +259,7 @@ func test_idle_villager_does_chores_logs_to_firewood_to_house() -> void:
 	assert_true(e.eco.total(&"logs") >= TaskDefs.CHORE_LOGS_RESERVE, "reserve respected")
 	# Дрова сохраняются: 2 на бревно
 	var chopped := 40 - e.eco.total(&"logs")
-	assert_eq(e.eco.total(&"firewood") + e.vs.firewood_stock(house), chopped * TaskDefs.FIREWOOD_PER_LOG)
+	assert_eq(e.eco.total(&"firewood") + e.vs.firewood_stock(house) + e.vs.stove_stock(house), chopped * TaskDefs.FIREWOOD_PER_LOG)
 
 
 func test_chores_can_be_disabled_or_prioritized() -> void:

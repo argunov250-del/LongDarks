@@ -78,6 +78,8 @@ func consume(cost: Dictionary) -> bool:
 
 ## Кладёт по складам в порядке регистрации; возвращает фактически добавленное.
 func deposit(res: StringName, n: int) -> int:
+	if not ResourceDefs.is_warehouse_stockable(res):
+		return 0
 	var left := n
 	for s in storages:
 		if left <= 0:

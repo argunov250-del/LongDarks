@@ -58,11 +58,12 @@ const PRODUCTION_SLOTS := 1
 const CHORE_SLOTS := 1
 
 ## --- Повседневные дела: дрова ---
-const CHOP_WORK := 4.0                 # работа на колку одного бревна
+const CHOP_WORK := 4.0                 # работа на колку одного бревна (у колоды во дворе)
 const FIREWOOD_PER_LOG := 2
 const CHORE_LOGS_RESERVE := 10         # бревна ниже этого запаса на дрова не идут
-const FIREWOOD_STORAGE_TARGET := 40    # колют, пока дров на складах меньше
-const CARRY_CAPACITY := 6              # дров за ходку
+const CHOP_LOGS_PER_TRIP := 3          # брёвен за ходку со склада к колоде
+const CARRY_CAPACITY := 6              # единиц за ходку в руках/корзине (охапка дров, корзина овощей, еда)
 const PICKUP_WORK := 1.5               # работа на погрузку у склада
-const DELIVER_WORK := 1.5              # работа на выгрузку в доме
+const DELIVER_WORK := 1.5              # работа на выгрузку (поленница, печь, дом, столовая)
+const CANTEEN_COOK_BONUS := 1.5        # повар быстрее носит еду и воду в столовую
 const ARRIVE_RADIUS_HUB := 5.0         # новичок «пришёл» на этом расстоянии от центра

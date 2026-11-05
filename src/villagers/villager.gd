@@ -14,7 +14,8 @@ var skills: Dictionary = {}         # StringName категория -> float
 var is_hero := false
 var immortal := false               # герой не может умереть (системы смерти обязаны проверять)
 var arriving := false               # новичок идёт в посёлок
-## Текущая задача: {} или {kind, cat, key, target, phase, work, carry, src}.
+## Текущая задача: {} или {kind, cat, key, target, phase, work, carry, src, res, dest}
+## (res — что несёт в руках, dest — куда: &"stove"|&"woodpile"|&"house"|&"canteen").
 var task: Dictionary = {}
 var at_site := false                # стоит на месте работы (для анимации/текста)
 var think_cd := 0.0
@@ -118,7 +119,7 @@ static func from_dict(d: Dictionary) -> Villager:
 		for k in d["task"]:
 			var val = d["task"][k]
 			match String(k):
-				"kind", "cat", "phase":
+				"kind", "cat", "phase", "res", "dest":
 					v.task[String(k)] = StringName(String(val))
 				"key":
 					v.task[String(k)] = String(val)
@@ -136,4 +137,6 @@ static func from_dict(d: Dictionary) -> Villager:
 		v.task["work"] = v.task.get("work", 0.0)
 		v.task["carry"] = v.task.get("carry", 0)
 		v.task["src"] = v.task.get("src", 0)
+		v.task["res"] = v.task.get("res", &"")
+		v.task["dest"] = v.task.get("dest", &"")
 	return v
