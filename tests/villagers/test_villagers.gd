@@ -29,7 +29,7 @@ func test_villager_generation_rules() -> void:
 		var v := Villager.generate(rng)
 		seen_prof[v.profession] = true
 		assert_true(v.traits.size() >= 1 and v.traits.size() <= 3, "1-3 traits")
-		assert_true(v.skills.has(v.profession), "skill field")
+		assert_true(v.skills.has(TaskDefs.BUILD) and v.skills.size() == TaskDefs.WORK_CATEGORIES.size(), "skill field")
 		assert_true(v.backstory != "" and not v.backstory.contains("{"), "backstory rendered: " + v.backstory)
 		assert_true(v.display_name.split(" ").size() == 2)
 		for a in v.traits:
@@ -189,7 +189,7 @@ func test_suitability_affects_speed() -> void:
 	var rb := e.vs.work_rate(builder, TaskDefs.BUILD)
 	var rp := e.vs.work_rate(plain, TaskDefs.BUILD)
 	var rl := e.vs.work_rate(lazy_cook, TaskDefs.BUILD)
-	assert_almost_eq(rp, BuildingDefs.BUILD_RATE)
+	assert_almost_eq(rp, BuildingDefs.BUILD_RATE * SkillDefs.rate_multiplier(SkillDefs.BASE_SKILL))
 	assert_true(rb > rp * 1.5, "builder+strong much faster")
 	assert_true(rl < rp, "lazy slower")
 	var clumsy_mech := e.add_villager(&"mechanic", [&"clumsy"])

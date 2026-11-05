@@ -9,8 +9,8 @@ var age: int = 30
 var backstory := ""
 var profession: StringName = &"builder"
 var traits: Array[StringName] = []  # 1..3 черты (TraitDefs)
-## Навык по профессиям. HOOK (шаг 12): рост и обучение; пока только хранится.
-var skills: Dictionary = {}         # StringName профессия -> float
+## Навык по категориям работы (TaskDefs.WORK_CATEGORIES) 0..1, см. SkillDefs.
+var skills: Dictionary = {}         # StringName категория -> float
 var is_hero := false
 var immortal := false               # герой не может умереть (системы смерти обязаны проверять)
 var arriving := false               # новичок идёт в посёлок
@@ -29,8 +29,8 @@ func profession_name() -> String:
 	return VillagerDefs.profession_name(profession)
 
 
-func skill(prof: StringName = &"") -> float:
-	return skills.get(prof if prof != &"" else profession, 0.0)
+func skill(cat: StringName) -> float:
+	return skills.get(cat, SkillDefs.BASE_SKILL)
 
 
 ## Случайный житель. opts: sex (&"m"/&"f"), profession, hero (bool), age.
@@ -45,7 +45,7 @@ static func generate(rng: RandomNumberGenerator, opts: Dictionary = {}) -> Villa
 	v.age = int(opts.get("age", rng.randi_range(VillagerDefs.AGE_MIN, VillagerDefs.AGE_MAX)))
 	var prof_idx := rng.randi_range(0, VillagerDefs.PROFESSIONS.size() - 1)
 	v.profession = opts.get("profession", VillagerDefs.PROFESSIONS[prof_idx])
-	v.skills = {v.profession: VillagerDefs.START_SKILL}
+	v.skills = SkillDefs.initial(v.profession)
 	# Черты: количество, затем случайные без дублей и несовместимых.
 	var want := rng.randi_range(VillagerDefs.TRAITS_MIN, VillagerDefs.TRAITS_MAX)
 	var pool := TraitDefs.ids()
@@ -100,9 +100,12 @@ static func from_dict(d: Dictionary) -> Villager:
 			var tid := StringName(String(t))
 			if TraitDefs.exists(tid) and not v.traits.has(tid):
 				v.traits.append(tid)
+	v.skills = SkillDefs.initial(v.profession)  # старые/битые сохранения: недостающее — по профессии
 	if d.get("skills") is Dictionary:
 		for k in d["skills"]:
-			v.skills[StringName(String(k))] = float(d["skills"][k])
+			var c := StringName(String(k))
+			if TaskDefs.WORK_CATEGORIES.has(c):
+				v.skills[c] = clampf(float(d["skills"][k]), 0.0, SkillDefs.MAX_SKILL)
 	v.is_hero = bool(d.get("hero", false))
 	v.immortal = bool(d.get("immortal", false)) or v.is_hero
 	v.arriving = bool(d.get("arriving", false))

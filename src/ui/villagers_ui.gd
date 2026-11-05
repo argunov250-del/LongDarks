@@ -28,6 +28,8 @@ var _dp := 2.6
 var _rows: Dictionary = {}        # id -> {"info": RichTextLabel, "card": Button}
 var _prio_rows: Dictionary = {}   # cat -> {"value": Label, "minus": Button, "plus": Button}
 var _count_label: Label
+var sort_cat: StringName = &""    # &"" — по порядку появления, иначе по навыку категории
+var _sort_button: Button
 var _acc := 0.0
 var _toast_left := 0.0
 
@@ -124,6 +126,7 @@ func _clear_list() -> void:
 	_rows.clear()
 	_prio_rows.clear()
 	_count_label = null
+	_sort_button = null
 
 
 func refresh() -> void:
@@ -146,19 +149,37 @@ static func traits_bbcode(v: Villager) -> String:
 
 func _refresh_villagers() -> void:
 	var ids: Array = vs.villagers.keys()
+	if sort_cat != &"":
+		ids = vs.sorted_by_skill(sort_cat).map(func(x: Villager) -> int: return x.id)
 	if ids != _rows.keys():
 		_clear_list()
 		_count_label = Label.new()
 		list_box.add_child(_count_label)
+		_sort_button = Button.new()
+		_sort_button.focus_mode = Control.FOCUS_NONE
+		_sort_button.custom_minimum_size = Vector2(0.0, 48.0 * _dp)
+		_sort_button.pressed.connect(cycle_sort)
+		list_box.add_child(_sort_button)
 		for id in ids:
 			_add_villager_row(vs.villagers[id])
 	_count_label.text = "Жителей: %d из %d" % [vs.population(), vs.max_population]
+	_sort_button.text = "Сортировка: " + ("порядок прибытия" if sort_cat == &"" else "навык «%s»" % TaskDefs.NAMES[sort_cat])
 	for id in _rows:
 		var v: Villager = vs.villagers[id]
 		var info: RichTextLabel = _rows[id]["info"]
 		var txt := "[b]%s[/b]%s — %s\n%s\n%s" % [v.display_name, " (герой)" if v.is_hero else "", v.profession_name(), traits_bbcode(v), vs.task_text(v)]
+		if sort_cat != &"":
+			txt += "\n%s: %s %d%%" % [TaskDefs.NAMES[sort_cat], SkillDefs.bar(v.skill(sort_cat)), roundi(v.skill(sort_cat) * 100.0)]
 		if info.text != txt:
 			info.text = txt
+
+
+## Следующая сортировка: порядок прибытия -> навык каждой категории -> снова порядок.
+func cycle_sort() -> void:
+	var cats := TaskDefs.WORK_CATEGORIES
+	var i := cats.find(sort_cat) + 1 if sort_cat != &"" else 0
+	sort_cat = cats[i] if i < cats.size() else &""
+	refresh()
 
 
 func _add_villager_row(v: Villager) -> void:

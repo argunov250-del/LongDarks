@@ -344,6 +344,7 @@ func villager_card_text(v: Villager) -> String:
 	var t := "%s%s\n%s, %s, %s" % [v.display_name, " (герой)" if v.is_hero else "", v.profession_name(), VillagerDefs.sex_label(v.sex), VillagerDefs.age_text(v.age)]
 	t += "\nЧерты: " + ", ".join(traits)
 	t += "\nСейчас: " + villagers.task_text(v)
+	t += "\nНавыки:\n" + SkillDefs.card_lines(v.skills)
 	t += "\n" + v.backstory
 	return t
 

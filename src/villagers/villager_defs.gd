@@ -13,7 +13,6 @@ const DOG_TELEPORT_DIST := 60.0
 const AGE_MIN := 18
 const AGE_MAX := 62
 const HERO_AGE := 34
-const START_SKILL := 1.0           # навык по своей профессии; рост/обучение — шаг 12
 const TRAITS_MIN := 1
 const TRAITS_MAX := 3
 

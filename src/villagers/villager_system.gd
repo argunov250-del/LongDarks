@@ -248,9 +248,39 @@ func profession_multiplier(v: Villager, cat: StringName, building_type: StringNa
 	return (TaskDefs.PROFESSION_BONUS.get(cat, {}) as Dictionary).get(v.profession, 1.0)
 
 
-## HOOK (шаг 12): множитель от навыка профессии. Пока 1.0.
-func skill_multiplier(_v: Villager, _cat: StringName) -> float:
-	return 1.0
+## Множитель скорости от навыка жителя в категории (SkillDefs).
+func skill_multiplier(v: Villager, cat: StringName) -> float:
+	return SkillDefs.rate_multiplier(v.skill(cat))
+
+
+## Учитель на том же объекте: лучший навык среди работающих рядом (-1 — никого).
+func _best_coworker_skill(v: Villager, cat: StringName) -> float:
+	var key: String = v.task.get("key", "")
+	var best := -1.0
+	for o: Villager in villagers.values():
+		if o != v and o.at_site and o.task.get("key", "") == key:
+			best = maxf(best, o.skill(cat))
+	return best
+
+
+## Множитель роста от обучения: ученик (на TEACH_GAP слабее соседа по объекту) учится быстрее.
+func teach_multiplier(v: Villager, cat: StringName) -> float:
+	return SkillDefs.TEACH_BONUS if _best_coworker_skill(v, cat) - v.skill(cat) >= SkillDefs.TEACH_GAP else 1.0
+
+
+## Опыт: dt секунд реальной работы в категории.
+func train(v: Villager, cat: StringName, dt: float) -> void:
+	v.skills[cat] = minf(SkillDefs.MAX_SKILL, v.skill(cat) + SkillDefs.gain(v.skill(cat), dt, TraitDefs.learn_multiplier(v.traits), teach_multiplier(v, cat)))
+
+
+## Жители по убыванию навыка категории (стабильно по id).
+func sorted_by_skill(cat: StringName) -> Array[Villager]:
+	var out := villager_list()
+	out.sort_custom(func(a: Villager, b: Villager) -> bool:
+		if not is_equal_approx(a.skill(cat), b.skill(cat)):
+			return a.skill(cat) > b.skill(cat)
+		return a.id < b.id)
+	return out
 
 
 ## Пригодность: профессия * черты * навык (без базовой скорости). 1.0 — среднее.
@@ -568,20 +598,26 @@ func _work(v: Villager, t: Dictionary, dt: float) -> void:
 			v.think_cd = 0.0
 		&"build":
 			construction.add_work(&"build", t["target"], work_rate(v, TaskDefs.BUILD) * dt)
+			train(v, TaskDefs.BUILD, dt)
 		&"fell":
 			construction.add_work(&"fell", t["target"], work_rate(v, TaskDefs.FELL) * dt)
+			train(v, TaskDefs.FELL, dt)
 		&"dismantle":
 			construction.add_work(&"dismantle", t["target"], work_rate(v, TaskDefs.DISMANTLE) * dt)
+			train(v, TaskDefs.DISMANTLE, dt)
 		&"produce":
 			var b := construction.get_building(t["target"])
 			var cat := TaskDefs.REPAIR if production.active_job_kind(b.id) == &"repair" else TaskDefs.PRODUCTION
 			production.add_work(b.id, work_rate(v, cat, b.type) * dt)
+			train(v, cat, dt)
 		&"chop":
 			t["work"] += work_rate(v, TaskDefs.CHORES) * dt
+			train(v, TaskDefs.CHORES, dt)
 			if t["work"] >= TaskDefs.CHOP_WORK:
 				_finish_chop(v, t)
 		&"carry":
 			t["work"] += work_rate(v, TaskDefs.CHORES) * dt
+			train(v, TaskDefs.CHORES, dt)
 			if t["phase"] == &"fetch" and t["work"] >= TaskDefs.PICKUP_WORK:
 				_finish_pickup(v, t)
 			elif t["phase"] == &"deliver" and t["work"] >= TaskDefs.DELIVER_WORK:

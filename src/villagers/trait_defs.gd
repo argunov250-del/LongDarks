@@ -29,6 +29,10 @@ const _DEFS := {
 	&"sluggish": ["медлительный", false, {C: -0.3, F: -0.1}],
 }
 
+## Скорость обучения (множитель навыков): +0.4 = учится на 40% быстрее. Пол — SkillDefs.MIN_LEARN_MULT.
+## Только черты, которые явно про это.
+const LEARN := {&"clever": 0.4, &"absentminded": -0.3}
+
 ## Несовместимые пары (не выпадают вместе).
 const EXCLUSIVE: Array = [
 	[&"strong", &"weak"], [&"lazy", &"diligent"], [&"lazy", &"hardy"],
@@ -73,3 +77,11 @@ static func rate_multiplier(trait_ids: Array, category: StringName) -> float:
 		if _DEFS.has(t):
 			sum += _DEFS[t][2].get(category, 0.0)
 	return maxf(TaskDefs.MIN_RATE_MULT, 1.0 + sum)
+
+
+## Множитель скорости роста навыков от черт.
+static func learn_multiplier(trait_ids: Array) -> float:
+	var sum := 0.0
+	for t in trait_ids:
+		sum += LEARN.get(t, 0.0)
+	return maxf(SkillDefs.MIN_LEARN_MULT, 1.0 + sum)
