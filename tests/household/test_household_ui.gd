@@ -52,6 +52,8 @@ func test_house_panel_shows_yard_and_builds_barn() -> void:
 		hud._apply_mode(mode)
 		var h := e.vs.household.home(house)
 		h.barn = false
+		if e.con.barn_of(house) != null:
+			e.con.buildings.erase(e.con.barn_of(house).id)
 		h.woodpile = 3
 		bc.select_building(house)
 		var txt: String = hud._bar_label.text
@@ -62,8 +64,8 @@ func test_house_panel_shows_yard_and_builds_barn() -> void:
 		assert_eq(hud._bar_buttons[idx].text, "Построить сарай")
 		assert_false(hud._bar_buttons[idx].disabled)
 		hud._bar_buttons[idx].pressed.emit()
-		assert_true(h.barn)
-		assert_true(hud._bar_label.text.contains("куры и корова"))
+		assert_true(e.con.barn_of(house) != null and not h.barn, "barn is a construction")
+		assert_true(hud._bar_label.text.contains("строится"))
 		assert_false(hud._bar_ids.has(&"build_barn"), "button gone once built")
 		bc.clear_selection()
 	hud.free()

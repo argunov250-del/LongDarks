@@ -137,7 +137,7 @@ static func _parts_compatible(t1: StringName, k1: StringName, t2: StringName, k2
 
 ## Проверка места: {"ok": bool, "reason": &"" | &"outside" | &"water" | &"slope" | &"overlap"}. Лес не мешает: стройка ждёт вырубки.
 ## Проверяются все части здания (основание и двор жилья).
-func validate_placement(type: StringName, pos: Vector3, rot: float, ignore_id: int = -1) -> Dictionary:
+func validate_placement(type: StringName, pos: Vector3, rot: float, ignore_id: int = -1, host_id: int = 0) -> Dictionary:
 	if not BuildingDefs.exists(type):
 		return {"ok": false, "reason": &"type"}
 	var c := Vector2(pos.x, pos.z)
@@ -164,8 +164,10 @@ func validate_placement(type: StringName, pos: Vector3, rot: float, ignore_id: i
 		if (hi - lo) / maxf(maxf(size.x, size.y), 0.01) > BuildingDefs.MAX_SLOPE:
 			return {"ok": false, "reason": &"slope"}
 	for b: Building in buildings.values():
-		if b.id == ignore_id:
+		if b.id == ignore_id or b.id == host_id:
 			continue
+		if BuildingDefs.is_barn(b.type) and b.host_id == ignore_id and ignore_id > 0:
+			continue  # сарай лежит в дворе улучшаемого дома
 		for op in b.world_parts():
 			for np in parts:
 				if _parts_compatible(type, np["kind"], b.type, op["kind"]):
@@ -218,6 +220,29 @@ func ground_height(pos: Vector3) -> float:
 
 # ---------- действия ----------
 
+## Сарай во дворе готового дома: обычная стройка (этапы, ресурсы, жители), привязана к дому.
+## Возвращает id или -1 (нет дома, сарай уже есть/строится, нет места).
+func place_barn(house_id: int) -> int:
+	var h := get_building(house_id)
+	if h == null or not h.is_done() or not BuildingDefs.is_housing(h.type) or barn_of(house_id) != null:
+		return -1
+	var c := Footprint.local_to_world(h.xz(), h.rot, BuildingDefs.YARD_OFFSET + HouseholdDefs.BARN_POS)
+	var pos := Vector3(c.x, 0.0, c.y)
+	if not validate_placement(&"barn", pos, h.rot, -1, house_id)["ok"]:
+		return -1
+	var id := _create(&"barn", pos, h.rot, false)
+	get_building(id).host_id = house_id
+	return id
+
+
+## Сарай дома (в любом состоянии) или null.
+func barn_of(house_id: int) -> Building:
+	for b: Building in buildings.values():
+		if b.host_id == house_id and BuildingDefs.is_barn(b.type):
+			return b
+	return null
+
+
 ## Закладывает стройку. Возвращает id или -1 (место не подходит).
 func place(type: StringName, pos: Vector3, rot: float) -> int:
 	if not validate_placement(type, pos, rot)["ok"]:
@@ -247,6 +272,9 @@ func cancel_building(id: int) -> bool:
 	if b == null or b.is_done() or b.stage != BuildingDefs.Stage.FOUNDATION or b.stage_paid or b.progress > 0.0:
 		return false
 	var cells := _building_tree_cells(b)
+	var bn := barn_of(id)
+	if bn != null:
+		buildings.erase(bn.id)
 	buildings.erase(id)
 	var keep := {}
 	for o: Building in buildings.values():

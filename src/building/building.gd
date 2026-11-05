@@ -10,6 +10,7 @@ var stage: int = BuildingDefs.Stage.FOUNDATION
 var stage_paid: bool = false     # цена текущей стадии уже списана
 var progress: float = 0.0        # выполненная работа текущей стадии
 var restored: bool = false       # восстановлено из руин (дешевле)
+var host_id: int = 0             # сарай: id дома, во дворе которого он стоит (0 — нет)
 var storage_id: int = 0          # склад/погреб в EconomySystem (0 — нет)
 var blocked: StringName = &""    # &"" | &"resources" | &"frozen" — почему стадия стоит
 
@@ -60,7 +61,7 @@ func to_dict() -> Dictionary:
 		"id": id, "type": String(type),
 		"pos": [position.x, position.y, position.z], "rot": rot,
 		"stage": stage, "paid": stage_paid, "progress": progress,
-		"restored": restored, "storage_id": storage_id,
+		"restored": restored, "storage_id": storage_id, "host": host_id,
 	}
 
 
@@ -77,4 +78,5 @@ static func from_dict(d: Dictionary) -> Building:
 	b.progress = float(d.get("progress", 0.0))
 	b.restored = bool(d.get("restored", false))
 	b.storage_id = SaveManager.to_int(d.get("storage_id"), 0)
+	b.host_id = SaveManager.to_int(d.get("host"), 0)
 	return b

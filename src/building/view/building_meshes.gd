@@ -12,6 +12,7 @@ const TAB_COLORS := {
 	BuildingDefs.Tab.PRODUCTION: Color(0.45, 0.50, 0.58),
 	BuildingDefs.Tab.SOCIAL: Color(0.55, 0.62, 0.45),
 	BuildingDefs.Tab.DEFENSE: Color(0.50, 0.30, 0.28),
+	BuildingDefs.Tab.ADDON: Color(0.55, 0.42, 0.30),
 }
 const SLAB_COLOR := Color(0.55, 0.55, 0.55)
 const ROOF_COLOR := Color(0.28, 0.22, 0.20)
@@ -64,6 +65,8 @@ static func _box(parent: Node3D, node_name: String, size: Vector3, pos: Vector3,
 
 ## frac — прогресс текущей стадии. ghost_color != null -> полупрозрачный призрак целого здания.
 static func make(type: StringName, stage: int, frac: float, ghost_color = null) -> Node3D:
+	if type == &"well":
+		return _make_well(stage, frac, ghost_color)
 	var root := Node3D.new()
 	var ghost := ghost_color != null
 	var parts := stage_parts(BuildingDefs.Stage.DONE if ghost else stage, frac)
@@ -111,6 +114,7 @@ const RIPE_COLORS := {&"potato": Color(0.85, 0.80, 0.45), &"vegetables": Color(0
 const BARN_COLOR := Color(0.55, 0.42, 0.30)
 const WOODPILE_MAX_H := 0.9
 const FENCE_POST_STEP := 1.0
+const METAL_COLOR := Color(0.35, 0.35, 0.38)
 const CHIMNEY_COLOR := Color(0.45, 0.42, 0.42)
 
 
@@ -184,22 +188,13 @@ static func make_yard(type: StringName, state: Dictionary = {}, ghost_color = nu
 			for k in 4:
 				var o := Vector2(-1.0 + float(row) * 1.0, -1.3 + float(k) * 0.85)
 				_box(g, "Plant", Vector3(0.3, ph, 0.3), gpos + Vector3(o.x, 0.1 + ph * 0.5, o.y), _mat(col, false))
-	# сарай с курами и коровой
+	# куры и корова живут в достроенном сарае (сам сарай — отдельное здание)
 	if state.get("barn", false):
 		var b := Node3D.new()
 		b.name = "Barn"
 		root.add_child(b)
 		var bpos := _yl(HouseholdDefs.BARN_POS)
 		var bsz := HouseholdDefs.BARN_SIZE
-		_box(b, "Walls", Vector3(bsz.x, 1.5, bsz.y), bpos + Vector3(0, 0.75, 0), _mat(BARN_COLOR, false))
-		var pm := PrismMesh.new()
-		pm.size = Vector3(bsz.x + 0.3, 0.7, bsz.y + 0.3)
-		var roof := MeshInstance3D.new()
-		roof.name = "Roof"
-		roof.mesh = pm
-		roof.position = bpos + Vector3(0, 1.5 + 0.35, 0)
-		roof.material_override = _mat(ROOF_COLOR, false)
-		b.add_child(roof)
 		_box(b, "Cow", Vector3(0.5, 0.5, 0.9), bpos + Vector3(0.9, 0.25, bsz.y * 0.5 + 0.7), _mat(Color(0.92, 0.92, 0.9), false))
 		for i in HouseholdDefs.CHICKENS:
 			_box(b, "Chicken", Vector3(0.18, 0.18, 0.22), bpos + Vector3(-1.2 + 0.35 * i, 0.09, bsz.y * 0.5 + 0.5 + 0.15 * (i % 2)), _mat(Color(0.9, 0.75, 0.3), false))
@@ -208,4 +203,67 @@ static func make_yard(type: StringName, state: Dictionary = {}, ghost_color = nu
 		var size := BuildingDefs.footprint(type)
 		var top := SLAB_H - 0.1 + BuildingDefs.wall_height(type) + 0.9
 		_box(root, "Chimney", Vector3(0.45, 1.1, 0.45), Vector3(size.x * 0.25, top, -size.y * 0.15), _mat(CHIMNEY_COLOR, false))
+	return root
+
+
+# ---------- колодец: сруб, навес, ворот с ручкой, ведро на цепи ----------
+
+const WELL_LOG := Color(0.50, 0.34, 0.20)
+const WELL_BASE_Y := SLAB_H - 0.1
+const WELL_AXIS_Y := 1.75        # высота оси ворота над основанием
+const WELL_BUCKET_LOW := 0.25
+const WELL_BUCKET_HIGH := 1.15
+
+
+static func _make_well(stage: int, frac: float, ghost_color) -> Node3D:
+	var root := Node3D.new()
+	var ghost := ghost_color != null
+	var parts := stage_parts(BuildingDefs.Stage.DONE if ghost else stage, frac)
+	var log_m := _mat(ghost_color if ghost else WELL_LOG, ghost)
+	if parts[0] > 0.0:
+		var h := SLAB_H * maxf(parts[0], 0.15)
+		_box(root, "Foundation", Vector3(2.2, h, 2.2), Vector3(0, h * 0.5 - 0.1, 0), _mat(ghost_color if ghost else SLAB_COLOR, ghost))
+	if parts[1] > 0.0:  # сруб: четыре венца-стенки
+		var wh := BuildingDefs.wall_height(&"well") * parts[1]
+		var walls := Node3D.new()
+		walls.name = "Walls"
+		root.add_child(walls)
+		for sz in [-1.0, 1.0]:
+			_box(walls, "LogZ", Vector3(1.8, wh, 0.32), Vector3(0, WELL_BASE_Y + wh * 0.5, sz * 0.74), log_m)
+			_box(walls, "LogX", Vector3(0.32, wh, 1.16), Vector3(sz * 0.74, WELL_BASE_Y + wh * 0.5, 0), log_m)
+	if parts[2] > 0.0:
+		var roof := Node3D.new()
+		roof.name = "Roof"
+		root.add_child(roof)
+		var top := WELL_BASE_Y + 2.1 * parts[2]
+		for sx in [-1.0, 1.0]:
+			_box(roof, "Post", Vector3(0.14, 2.1 * parts[2], 0.14), Vector3(sx * 0.95, WELL_BASE_Y + 1.05 * parts[2], 0), log_m)
+		if parts[2] >= 0.99 or ghost:
+			var pm := PrismMesh.new()
+			pm.size = Vector3(2.5, 0.7, 2.2)
+			var awning := MeshInstance3D.new()
+			awning.name = "Awning"
+			awning.mesh = pm
+			awning.position = Vector3(0, top + 0.35, 0)
+			awning.material_override = _mat(ghost_color if ghost else ROOF_COLOR, ghost)
+			roof.add_child(awning)
+			# ворот: горизонтальный валик на двух стойках, ручка-кривошип
+			var wl := Node3D.new()
+			wl.name = "Windlass"
+			wl.position = Vector3(0, WELL_BASE_Y + WELL_AXIS_Y, 0)
+			roof.add_child(wl)
+			var cyl := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = 0.12
+			cm.bottom_radius = 0.12
+			cm.height = 1.9
+			cm.radial_segments = 8
+			cyl.mesh = cm
+			cyl.rotation.z = PI * 0.5
+			cyl.material_override = log_m
+			wl.add_child(cyl)
+			_box(wl, "CrankArm", Vector3(0.06, 0.5, 0.06), Vector3(1.12, 0.25, 0), log_m)
+			_box(wl, "CrankGrip", Vector3(0.28, 0.07, 0.07), Vector3(1.24, 0.5, 0), log_m)
+			_box(roof, "Chain", Vector3(0.03, 1.0, 0.03), Vector3(0, WELL_BASE_Y + WELL_AXIS_Y - 0.5, 0), _mat(ghost_color if ghost else METAL_COLOR, ghost))
+			_box(roof, "Bucket", Vector3(0.3, 0.28, 0.3), Vector3(0, WELL_BASE_Y + WELL_BUCKET_HIGH, 0), _mat(ghost_color if ghost else Color(0.45, 0.45, 0.5), ghost))
 	return root

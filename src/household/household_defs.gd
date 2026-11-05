@@ -45,7 +45,7 @@ const PLANT_WORK := 6.0                     # работа на посадку
 const HARVEST_WORK := 6.0                   # работа на сбор
 
 # ---------- сарай ----------
-const BARN_COST := {&"planks": 6, &"logs": 4}
+# Цена и работа сарая — обычная стройка, см. BuildingDefs (&"barn").
 const CHICKENS := 4                         # куры в сарае (без кормёжки)
 const EGG_PERIOD := 40.0                    # с на одно яйцо всего (плейсхолдер)
 const COWS := 1

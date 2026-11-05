@@ -92,24 +92,41 @@ func test_garden_season_hook_exists() -> void:
 	assert_true(HouseholdDefs.garden_season_allows(100, &"harvest"))
 
 
-func test_barn_gives_eggs_and_milk() -> void:
-	var r := _house_env({&"logs": 20, &"planks": 20})
+func test_barn_is_built_in_stages_then_gives_eggs_and_milk() -> void:
+	var r := _house_env({&"logs": 30, &"planks": 30})
 	var e: Env = r[0]
 	var hs := e.vs.household
 	var h := hs.home(r[1])
 	assert_true(hs.can_build_barn(r[1]))
 	assert_true(hs.build_barn(r[1]))
-	assert_true(h.barn)
-	assert_eq(e.eco.total(&"planks"), 20 - HouseholdDefs.BARN_COST[&"planks"], "cost paid")
-	assert_eq(e.eco.total(&"logs"), 20 - HouseholdDefs.BARN_COST[&"logs"])
+	var barn := e.con.barn_of(r[1])
+	assert_true(barn != null and barn.host_id == r[1] and BuildingDefs.is_barn(barn.type))
+	assert_false(barn.is_done())
+	var yard: Vector2 = e.con.get_building(r[1]).world_parts()[1]["c"]
+	assert_true(Footprint.contains(yard, BuildingDefs.YARD_SIZE, barn.rot, barn.xz()), "barn stands inside the yard")
 	assert_false(hs.build_barn(r[1]), "only one barn")
+	assert_false(hs.can_build_barn(r[1]))
+	e.vs.household.heating_needed = false
+	var stages := {}
+	var early_products := 0
+	for i in 3000:
+		e.sim.advance(0.1)
+		stages[barn.stage] = true
+		if not barn.is_done() and (h.food.amount(&"eggs") > 0 or h.food.amount(&"milk") > 0):
+			early_products += 1
+		if barn.is_done():
+			break
+	assert_true(barn.is_done(), "villagers finished the barn")
+	assert_true(stages.has(BuildingDefs.Stage.FOUNDATION) and stages.has(BuildingDefs.Stage.WALLS) and stages.has(BuildingDefs.Stage.ROOF), "foundation, walls, roof")
+	assert_eq(early_products, 0, "no eggs/milk before completion")
+	assert_true(e.eco.total(&"logs") < 30 and e.eco.total(&"planks") < 30, "resources paid by stages")
 	e.vs.set_priority(TaskDefs.CHORES, 0)
+	e.sim.advance(1.0)
+	assert_true(h.barn)
 	e.run(HouseholdDefs.MILK_PERIOD + 5.0)
 	assert_true(h.food.amount(&"eggs") >= 1, "eggs")
 	assert_true(h.food.amount(&"milk") >= 1, "milk")
 	assert_eq(e.eco.total(&"eggs"), 0, "into house stock, not warehouse")
-	var poor := _house_env({})
-	assert_false(poor[0].vs.household.can_build_barn(poor[1]), "needs resources")
 
 
 func test_water_only_from_well_carried_in_buckets() -> void:

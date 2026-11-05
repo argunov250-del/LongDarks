@@ -40,6 +40,8 @@ func sync() -> void:
 		var b: Building = construction.buildings[id]
 		if not b.is_done():
 			continue
+		if BuildingDefs.is_barn(b.type) and homes.has(b.host_id):
+			homes[b.host_id].barn = true
 		if BuildingDefs.is_housing(b.type) and not homes.has(id):
 			homes[id] = Household.new(id, &"house")
 		elif BuildingDefs.is_canteen(b.type) and not canteens.has(id):
@@ -233,17 +235,15 @@ func harvest(id: int) -> Dictionary:
 
 func can_build_barn(id: int) -> bool:
 	var h := home(id)
-	return h != null and not h.barn and economy.can_afford(HouseholdDefs.BARN_COST)
+	return h != null and not h.barn and construction.barn_of(id) == null
 
 
-## Игрок строит сарай (куры и корова) во дворе: цена сразу, постройка мгновенная (плейсхолдер).
+## Игрок заказывает сарай: на дворе закладывается обычная стройка (этапы, ресурсы, жители).
+## Куры и корова начинают давать продукцию, только когда сарай достроен (sync ставит barn).
 func build_barn(id: int) -> bool:
 	if not can_build_barn(id):
 		return false
-	economy.consume(HouseholdDefs.BARN_COST)
-	home(id).barn = true
-	_changed()
-	return true
+	return construction.place_barn(id) > 0
 
 
 # ---------- места во дворе (мировые координаты) ----------

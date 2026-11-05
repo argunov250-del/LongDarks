@@ -75,6 +75,15 @@ static func state_of(v: Villager, vs: VillagerSystem = null) -> Dictionary:
 	return {"pose": pose, "load": load}
 
 
+## Фаза вращения ворота/рук у колодца: общая для жителя и колодца (синхронно).
+static func crank_phase(t: float, seed_value: float) -> float:
+	return t * WORK_SPEED + seed_value
+
+
+## Общие часы (сек): VillagersView обновляет каждый кадр, колодцы берут отсюда.
+static var clock := 0.0
+
+
 static func _set_vis(n: Node, path: String, vis: bool) -> void:
 	var c := n.get_node_or_null(path)
 	if c != null:
@@ -109,7 +118,7 @@ static func apply(n: Node3D, st: Dictionary, t: float, seed_value: float) -> voi
 	_set_vis(body, "Armful/Logs", load == LOAD_LOGS)
 	_set_vis(body, "Armful/Firewood", load == LOAD_FIREWOOD)
 	_set_vis(body, "Armful/Basket", load == LOAD_BASKET)
-	var ph := t * WORK_SPEED + seed_value
+	var ph := crank_phase(t, seed_value)
 	match pose:
 		POSE_WALK:
 			var w := t * WALK_SPEED + seed_value

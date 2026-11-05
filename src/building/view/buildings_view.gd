@@ -8,6 +8,7 @@ const PROGRESS_STEPS := 10
 const WOOD_STEPS := 10  # ступеней высоты поленницы
 
 var con: ConstructionSystem
+var villagers: VillagerSystem    # опционально: колодцы крутят ворот вместе с жителем
 var household: HouseholdSystem  # опционально: двор жилья показывает запасы и огород
 var _nodes: Dictionary = {}  # id -> {"node": Node3D, "sig": String}
 var _acc := 0.0
@@ -19,6 +20,7 @@ func setup(construction: ConstructionSystem) -> void:
 
 
 func _process(dt: float) -> void:
+	_animate_wells()
 	_acc += dt
 	if _acc >= POLL_INTERVAL:
 		_acc = 0.0
@@ -40,6 +42,23 @@ func signature(b: Building) -> String:
 	if BuildingDefs.has_yard(b.type):
 		sig += "|" + str(yard_state(b))
 	return sig
+
+
+## Ворот и ведро колодца: работают, пока житель стоит у него в позе набора воды.
+func _animate_wells() -> void:
+	if con == null:
+		return
+	for id in _nodes:
+		var b: Building = con.buildings.get(id)
+		if b == null or not BuildingDefs.is_well(b.type):
+			continue
+		var seed_v := -1.0
+		if villagers != null:
+			for v: Villager in villagers.villagers.values():
+				if v.at_site and not v.moving and v.task.get("kind", &"") == &"water" and v.task.get("phase", &"") == &"fetch" and int(v.task.get("src", 0)) == id:
+					seed_v = float(v.id)
+					break
+		WellAnim.apply(_nodes[id]["node"], seed_v >= 0.0, VillagerAnim.crank_phase(VillagerAnim.clock, maxf(seed_v, 0.0)))
 
 
 func node_for(id: int) -> Node3D:

@@ -372,8 +372,8 @@ func _show_info() -> void:
 			acts.append([&"bprio", _priority_label(b.id), true])
 		if villagers != null and b.is_done() and BuildingDefs.is_housing(b.type):
 			var hh := villagers.household.home(b.id)
-			if hh != null and not hh.barn:
-				acts.append([&"build_barn", "Построить сарай", villagers.household.can_build_barn(b.id)])
+			if hh != null and villagers.household.can_build_barn(b.id):
+				acts.append([&"build_barn", "Построить сарай", true])
 		acts.append([&"upgrade", _upgrade_label(b), con.can_upgrade(b.id)])
 		if not b.is_done() and b.stage == BuildingDefs.Stage.FOUNDATION and not b.stage_paid and b.progress <= 0.0:
 			acts.append([&"cancel_building", "Отменить чертёж", true])
@@ -459,7 +459,13 @@ func household_text(b: Building) -> String:
 	elif h.garden_state == &"empty":
 		t += " (след.: %s)" % ResourceDefs.display_name(h.garden_crop)
 	t += "\nВода: %d/%d\nЕда: %s (%d/%d)" % [h.water, h.water_cap, _food_text(h), h.food.used(), h.food.capacity]
-	t += "\nСарай: " + ("куры и корова" if h.barn else "нет (цена: %s)" % _cost_text(HouseholdDefs.BARN_COST))
+	var bn := con.barn_of(b.id)
+	if h.barn:
+		t += "\nСарай: куры и корова"
+	elif bn != null:
+		t += "\nСарай: строится (%s %d%%)" % [BuildingDefs.STAGE_NAMES[bn.stage], roundi(bn.stage_fraction() * 100.0)]
+	else:
+		t += "\nСарай: нет (цена: %s)" % _cost_text(BuildingDefs.total_cost(&"barn"))
 	return t
 
 

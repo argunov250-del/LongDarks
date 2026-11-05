@@ -36,6 +36,7 @@ func _process(dt: float) -> void:
 	if vs == null:
 		return
 	_t += dt
+	VillagerAnim.clock = _t
 	_sync()
 	for id in _nodes:
 		var v := vs.get_villager(id)

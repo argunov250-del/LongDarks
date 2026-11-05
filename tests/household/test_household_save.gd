@@ -11,6 +11,7 @@ func test_household_round_trip_through_save_file() -> void:
 	var canteen := e.add_done(&"canteen", 30.0, 30.0)
 	e.vs.household.build_barn(house)
 	e.run(150.0)
+	e.vs.household.home(house).barn = true  # для проверки запасов; стройка сарая сохраняется отдельным тестом
 	var h := e.vs.household.home(house)
 	h.food.add(&"eggs", 2)
 	h.garden_state = Household.GARDEN_GROWING
@@ -46,3 +47,35 @@ func test_bad_household_data_is_tolerated() -> void:
 	assert_eq(h.garden_state, Household.GARDEN_EMPTY)
 	assert_eq(h.garden_crop, &"potato")
 	assert_eq(e.vs.household.homes.size(), 1)
+
+
+func test_barn_under_construction_survives_save() -> void:
+	var e := Env.new(5000, {&"logs": 30, &"planks": 30}, 11)
+	var house := e.add_done(&"dugout", 10.0, 0.0)
+	e.vs.household.heating_needed = false
+	assert_true(e.vs.household.build_barn(house))
+	var barn := e.con.barn_of(house)
+	var t := 0.0
+	while barn.stage < BuildingDefs.Stage.WALLS and t < 600.0:
+		e.run(1.0)
+		t += 1.0
+	e.run(5.0)
+	assert_false(barn.is_done())
+	assert_eq(SaveManager.save(e.sim, SLOT), OK)
+	var e2 := Env.new(5000, {}, 11)
+	assert_eq(SaveManager.load_slot(e2.sim, SLOT), OK)
+	var b2 := e2.con.barn_of(house)
+	assert_true(b2 != null and b2.host_id == house)
+	assert_eq(b2.stage, barn.stage)
+	assert_almost_eq(b2.progress, barn.progress, 0.001)
+	assert_false(e2.vs.household.home(house).barn)
+	e2.run(1.0)
+	assert_false(e2.vs.household.can_build_barn(house), "still one barn")
+	e2.vs.household.heating_needed = false
+	for i in 4000:
+		e2.sim.advance(0.1)
+		if b2.is_done():
+			break
+	e2.sim.advance(1.0)
+	assert_true(b2.is_done() and e2.vs.household.home(house).barn, "completes after load")
+	SaveManager.delete_slot(SLOT)

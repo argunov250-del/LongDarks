@@ -3,7 +3,7 @@ extends RefCounted
 ## Каталог зданий: только данные. Весь баланс (плейсхолдеры) — в константах ниже.
 
 enum Stage { FOUNDATION, WALLS, ROOF, DONE }
-enum Tab { HOUSING, PRODUCTION, SOCIAL, DEFENSE }
+enum Tab { HOUSING, PRODUCTION, SOCIAL, DEFENSE, ADDON }  # ADDON — достройки двора, в меню не показываются
 
 const STAGE_NAMES: Array[String] = ["Фундамент", "Стены", "Крыша", "Готово"]
 
@@ -45,6 +45,8 @@ const _DEFS := {
 	&"club": ["Клуб", Tab.SOCIAL, Vector2(6, 5), [{&"stone": 4}, {&"planks": 8, &"logs": 4}, {&"planks": 6}], [14.0, 22.0, 14.0], &"", 2.4, {}],
 	&"bathhouse": ["Баня", Tab.SOCIAL, Vector2(4, 4), [{&"stone": 3}, {&"logs": 8}, {&"planks": 4}], [10.0, 16.0, 10.0], &"", 2.0, {}],
 	&"canteen": ["Столовая", Tab.SOCIAL, Vector2(6, 5), [{&"stone": 4}, {&"planks": 8, &"logs": 2}, {&"planks": 6}], [12.0, 20.0, 12.0], &"", 2.4, {"canteen": true}],
+	# достройка двора жилья: ставится из панели дома, обычная стройка по этапам
+	&"barn": ["Сарай", Tab.ADDON, HouseholdDefs.BARN_SIZE, [{&"logs": 2}, {&"logs": 4, &"planks": 2}, {&"planks": 4}], [6.0, 10.0, 6.0], &"", 1.5, {"barn": true}],
 	# защита
 	&"fence": ["Забор", Tab.DEFENSE, Vector2(4, 0.6), [{&"logs": 1}, {&"planks": 2}, {}], [3.0, 5.0, 0.0], &"", 1.5, {}],
 	&"watchtower": ["Вышка", Tab.DEFENSE, Vector2(2.5, 2.5), [{&"stone": 3}, {&"logs": 6, &"planks": 2}, {&"planks": 3}], [8.0, 16.0, 8.0], &"", 6.0, {}],
@@ -123,7 +125,7 @@ static func upgrade_of(id: StringName) -> StringName:
 
 ## Типы, доступные как «восстановить из руин»: все, кроме верхних звеньев цепочки.
 static func is_restorable(id: StringName) -> bool:
-	return _DEFS.has(id) and id != &"izba" and id != &"stone_house"
+	return _DEFS.has(id) and id != &"izba" and id != &"stone_house" and id != &"barn"
 
 
 ## Номер звена в цепочке улучшений (0 — первое/не в цепочке).
@@ -159,6 +161,10 @@ static func stove_capacity(id: StringName) -> int:
 
 static func is_well(id: StringName) -> bool:
 	return _DEFS.has(id) and _DEFS[id][7].get("well", false)
+
+
+static func is_barn(id: StringName) -> bool:
+	return _DEFS.has(id) and _DEFS[id][7].get("barn", false)
 
 
 static func is_canteen(id: StringName) -> bool:

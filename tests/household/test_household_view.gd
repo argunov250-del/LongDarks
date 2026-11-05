@@ -94,3 +94,38 @@ func test_garden_poses() -> void:
 	assert_eq(VillagerAnim.state_of(v, e.vs)["pose"], VillagerAnim.POSE_PLANT)
 	h.garden_state = Household.GARDEN_RIPE
 	assert_eq(VillagerAnim.state_of(v, e.vs)["pose"], VillagerAnim.POSE_HARVEST)
+
+
+func test_well_mesh_and_crank_animation() -> void:
+	var w := BuildingMeshes.make(&"well", BuildingDefs.Stage.DONE, 1.0)
+	for n in ["Walls", "Roof", "Awning", "Windlass", "CrankArm", "Chain", "Bucket", "Post"]:
+		assert_true(_find(w, n) != null, n)
+	var stage1 := BuildingMeshes.make(&"well", BuildingDefs.Stage.WALLS, 0.5)
+	assert_true(_find(stage1, "Walls") != null and _find(stage1, "Roof") == null, "grows by stages")
+	var bucket := _find(w, "Bucket") as Node3D
+	var wl := _find(w, "Windlass") as Node3D
+	WellAnim.apply(w, true, 0.0)
+	var low := bucket.position.y
+	WellAnim.apply(w, true, PI)
+	assert_true(bucket.position.y > low, "bucket rises with the crank")
+	assert_almost_eq(wl.rotation.x, PI)
+	WellAnim.apply(w, false, 1.0)
+	assert_almost_eq(wl.rotation.x, 0.0)
+	# синхронно с позой жителя: общая фаза
+	assert_almost_eq(VillagerAnim.crank_phase(2.0, 3.0), 2.0 * VillagerAnim.WORK_SPEED + 3.0)
+	w.free()
+	stage1.free()
+	var e := Env.new()
+	var well := e.add_done(&"well", 20.0, 0.0)
+	var view := BuildingsView.new()
+	view.villagers = e.vs
+	view.setup(e.con)
+	var v := e.hero()
+	v.at_site = true
+	v.moving = false
+	v.task = {"kind": &"water", "phase": &"fetch", "src": well, "target": 1, "carry": 0, "res": &"", "dest": &"house", "key": "k", "work": 0.0}
+	VillagerAnim.clock = 1.0
+	view._animate_wells()
+	var rot := (view.node_for(well).find_child("Windlass", true, false) as Node3D).rotation.x
+	assert_almost_eq(rot, VillagerAnim.crank_phase(1.0, float(v.id)), 0.001, "windlass follows the villager's crank phase")
+	view.free()
