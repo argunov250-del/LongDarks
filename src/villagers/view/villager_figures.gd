@@ -33,7 +33,17 @@ static func _box(parent: Node3D, node_name: String, size: Vector3, pos: Vector3,
 	return mi
 
 
-## Узлы: Body (покачивается), Head, LegL/LegR; у героя ещё Mark.
+const WOOD_DARK := Color(0.40, 0.27, 0.16)
+const WOOD_LIGHT := Color(0.75, 0.58, 0.36)
+const METAL := Color(0.60, 0.62, 0.66)
+const BUCKET_COLOR := Color(0.45, 0.45, 0.50)
+const BASKET_COLOR := Color(0.62, 0.45, 0.25)
+const VEG_COLOR := Color(0.45, 0.70, 0.30)
+
+
+## Узлы: Body (покачивается; в нём Torso, Head, ArmL/ArmR, Armful), LegL/LegR; у героя ещё Mark.
+## Реквизит скрыт, пока им не пользуются (см. VillagerAnim): в руках — Axe/Hoe (ArmR),
+## BucketL/BucketR (вёдра), в охапке Armful/{Logs, Firewood, Basket}.
 static func make_villager(profession: StringName, hero: bool) -> Node3D:
 	var root := Node3D.new()
 	var body := Node3D.new()
@@ -43,6 +53,48 @@ static func make_villager(profession: StringName, hero: bool) -> Node3D:
 	_box(body, "Torso", Vector3(0.50, 0.70, 0.30), Vector3(0, 1.10, 0), col)
 	var head := _box(body, "Head", Vector3(0.28, 0.28, 0.28), Vector3(0, 1.62, 0), SKIN)
 	head.name = "Head"
+	for side in [-1.0, 1.0]:
+		var arm := Node3D.new()
+		arm.name = "ArmL" if side < 0.0 else "ArmR"
+		arm.position = Vector3(side * 0.34, 1.40, 0.0)
+		body.add_child(arm)
+		_box(arm, "Sleeve", Vector3(0.12, 0.60, 0.14), Vector3(0, -0.30, 0), col)
+		_box(arm, "Hand", Vector3(0.10, 0.10, 0.10), Vector3(0, -0.62, 0), SKIN)
+		var bucket := _box(arm, "BucketL" if side < 0.0 else "BucketR", Vector3(0.24, 0.26, 0.24), Vector3(0, -0.85, 0), BUCKET_COLOR)
+		bucket.visible = false
+	var armr := body.get_node("ArmR") as Node3D
+	var axe := Node3D.new()
+	axe.name = "Axe"
+	armr.add_child(axe)
+	_box(axe, "Handle", Vector3(0.06, 0.70, 0.06), Vector3(0, -0.85, 0.0), WOOD_DARK)
+	_box(axe, "Blade", Vector3(0.05, 0.20, 0.26), Vector3(0, -1.15, 0.12), METAL)
+	axe.visible = false
+	var hoe := Node3D.new()
+	hoe.name = "Hoe"
+	armr.add_child(hoe)
+	_box(hoe, "Handle", Vector3(0.05, 0.95, 0.05), Vector3(0, -0.95, 0.0), WOOD_DARK)
+	_box(hoe, "Blade", Vector3(0.22, 0.05, 0.18), Vector3(0, -1.42, 0.08), METAL)
+	hoe.visible = false
+	var armful := Node3D.new()
+	armful.name = "Armful"
+	armful.position = Vector3(0, 1.05, 0.32)
+	body.add_child(armful)
+	var logs := Node3D.new()
+	logs.name = "Logs"
+	armful.add_child(logs)
+	for i in 3:
+		_box(logs, "Log", Vector3(0.50, 0.14, 0.14), Vector3(0, 0.08 * (i % 2) + 0.0, -0.08 + 0.12 * i), WOOD_DARK)
+	var fw := Node3D.new()
+	fw.name = "Firewood"
+	armful.add_child(fw)
+	for i in 5:
+		_box(fw, "Piece", Vector3(0.40, 0.09, 0.09), Vector3(0, 0.05 * (i % 2), -0.10 + 0.07 * i), WOOD_LIGHT)
+	var basket := Node3D.new()
+	basket.name = "Basket"
+	armful.add_child(basket)
+	_box(basket, "Wicker", Vector3(0.40, 0.22, 0.30), Vector3(0, -0.02, 0), BASKET_COLOR)
+	_box(basket, "Veg", Vector3(0.34, 0.10, 0.24), Vector3(0, 0.12, 0), VEG_COLOR)
+	armful.visible = false
 	_box(root, "LegL", Vector3(0.18, 0.75, 0.20), Vector3(-0.13, 0.375, 0), PANTS)
 	_box(root, "LegR", Vector3(0.18, 0.75, 0.20), Vector3(0.13, 0.375, 0), PANTS)
 	if hero:

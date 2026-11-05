@@ -1,11 +1,9 @@
 class_name VillagersView
 extends Node3D
 ## Визуал жителей и собаки: по фигуре на сущность, позиции берутся из VillagerSystem
-## каждый кадр. Ходьба — покачивание, работа — наклоны, тревога собаки — метание и
+## каждый кадр. Позы и ноша — VillagerAnim (ходьба, топор, ворот колодца, укладка, огород), тревога собаки — метание и
 ## подёргивание головы (плейсхолдер, см. Dog.set_anxious).
 
-const BOB_SPEED := 9.0
-const WORK_SPEED := 6.0
 const SELECT_COLOR := Color(1.0, 0.95, 0.4, 0.8)
 
 var vs: VillagerSystem
@@ -71,25 +69,7 @@ func _sync() -> void:
 func _pose_villager(n: Node3D, v: Villager) -> void:
 	n.position = v.pos
 	n.rotation.y = v.facing
-	var body := n.get_node("Body") as Node3D
-	var phase := _t * BOB_SPEED + float(v.id)
-	var legl := n.get_node("LegL") as Node3D
-	var legr := n.get_node("LegR") as Node3D
-	if v.moving:
-		body.position.y = absf(sin(phase)) * 0.06
-		body.rotation.x = 0.0
-		legl.rotation.x = sin(phase) * 0.6
-		legr.rotation.x = -sin(phase) * 0.6
-	elif v.at_site and not v.task.is_empty():
-		body.position.y = 0.0
-		body.rotation.x = 0.25 + sin(_t * WORK_SPEED + float(v.id)) * 0.25  # наклоны за работой
-		legl.rotation.x = 0.0
-		legr.rotation.x = 0.0
-	else:
-		body.position.y = 0.0
-		body.rotation.x = 0.0
-		legl.rotation.x = 0.0
-		legr.rotation.x = 0.0
+	VillagerAnim.apply(n, VillagerAnim.state_of(v, vs), _t, float(v.id))
 
 
 func _pose_dog() -> void:

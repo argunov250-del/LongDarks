@@ -44,6 +44,7 @@ func _ready() -> void:
 	buildings_view = BuildingsView.new()
 	buildings_view.name = "Buildings"
 	add_child(buildings_view)
+	buildings_view.household = villagers.household
 	buildings_view.setup(construction)
 	villagers_view = VillagersView.new()
 	villagers_view.name = "Villagers"

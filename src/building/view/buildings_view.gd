@@ -5,8 +5,10 @@ extends Node3D
 
 const POLL_INTERVAL := 0.2
 const PROGRESS_STEPS := 10
+const WOOD_STEPS := 10  # ступеней высоты поленницы
 
 var con: ConstructionSystem
+var household: HouseholdSystem  # опционально: двор жилья показывает запасы и огород
 var _nodes: Dictionary = {}  # id -> {"node": Node3D, "sig": String}
 var _acc := 0.0
 
@@ -23,8 +25,21 @@ func _process(dt: float) -> void:
 		refresh()
 
 
+## Состояние двора жилья для узла Yard (пустой словарь — только забор).
+func yard_state(b: Building) -> Dictionary:
+	var h: Household = household.homes.get(b.id) if household != null else null  # запасы живут и при улучшении
+	if h == null:
+		return {"done": true} if b.is_done() else {}
+	var wood := float(h.woodpile) / float(maxi(1, BuildingDefs.firewood_capacity(b.type)))
+	return {"wood": snappedf(wood, 1.0 / WOOD_STEPS), "garden": h.garden_state, "garden_frac": snappedf(h.garden_fraction(), 0.25),
+		"crop": h.garden_crop, "barn": h.barn, "done": b.is_done()}
+
+
 func signature(b: Building) -> String:
-	return "%s|%d|%d" % [b.type, b.stage, int(b.stage_fraction() * PROGRESS_STEPS)]
+	var sig := "%s|%d|%d" % [b.type, b.stage, int(b.stage_fraction() * PROGRESS_STEPS)]
+	if BuildingDefs.has_yard(b.type):
+		sig += "|" + str(yard_state(b))
+	return sig
 
 
 func node_for(id: int) -> Node3D:
@@ -47,6 +62,8 @@ func refresh() -> void:
 				(entry["node"] as Node3D).queue_free()
 			var n := BuildingMeshes.make(b.type, b.stage, b.stage_fraction())
 			n.name = "Building%d" % id
+			if BuildingDefs.has_yard(b.type):
+				n.add_child(BuildingMeshes.make_yard(b.type, yard_state(b)))
 			add_child(n)
 			entry = {"node": n, "sig": sig}
 			_nodes[id] = entry

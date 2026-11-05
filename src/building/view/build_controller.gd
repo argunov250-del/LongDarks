@@ -171,6 +171,8 @@ func _update_ghost(force_ui: bool) -> void:
 		_ghost = BuildingMeshes.make(placing_type, BuildingDefs.Stage.DONE, 1.0,
 				BuildingMeshes.GHOST_OK if ghost_valid else BuildingMeshes.GHOST_BAD)
 		_ghost.name = "Ghost"
+		if BuildingDefs.has_yard(placing_type):
+			_ghost.add_child(BuildingMeshes.make_yard(placing_type, {}, BuildingMeshes.GHOST_OK if ghost_valid else BuildingMeshes.GHOST_BAD))
 		add_child(_ghost)  # узел контроллера должен находиться в 3D-дереве (см. main)
 		_ghost_valid_drawn = int(ghost_valid)
 		_ghost_type_drawn = placing_type
@@ -366,8 +368,12 @@ func _show_info() -> void:
 			acts.append([&"pause", "Продолжить" if production.is_paused(b.id) else "Пауза", true])
 			if production.available_recipes(b.id).size() > 1:
 				acts.append([&"recipe", "Рецепт", true])
-		if villagers != null and (not b.is_done() or production != null and production.is_producing_building(b.id) or BuildingDefs.is_housing(b.type)):
+		if villagers != null and (not b.is_done() or production != null and production.is_producing_building(b.id) or BuildingDefs.is_housing(b.type) or BuildingDefs.is_canteen(b.type)):
 			acts.append([&"bprio", _priority_label(b.id), true])
+		if villagers != null and b.is_done() and BuildingDefs.is_housing(b.type):
+			var hh := villagers.household.home(b.id)
+			if hh != null and not hh.barn:
+				acts.append([&"build_barn", "Построить сарай", villagers.household.can_build_barn(b.id)])
 		acts.append([&"upgrade", _upgrade_label(b), con.can_upgrade(b.id)])
 		if not b.is_done() and b.stage == BuildingDefs.Stage.FOUNDATION and not b.stage_paid and b.progress <= 0.0:
 			acts.append([&"cancel_building", "Отменить чертёж", true])
@@ -414,6 +420,8 @@ func _building_text(b: Building) -> String:
 	if b.is_done():
 		if production != null and production.is_producing_building(b.id):
 			return t + "\n" + production_text(b.id)
+		if villagers != null and (BuildingDefs.is_housing(b.type) or BuildingDefs.is_canteen(b.type)):
+			return t + "\nГотово\n" + household_text(b)
 		return t + "\nГотово"
 	t += "\n%s: %d%%" % [BuildingDefs.STAGE_NAMES[b.stage], roundi(b.stage_fraction() * 100.0)]
 	match b.blocked:
@@ -423,6 +431,35 @@ func _building_text(b: Building) -> String:
 			t += " — земля промёрзла"
 		&"forest":
 			t += " — ждёт вырубки"
+	return t
+
+
+const GARDEN_TEXT := {&"empty": "пусто", &"growing": "растёт", &"ripe": "созрел"}
+
+
+func _food_text(h: Household) -> String:
+	var parts: Array[String] = []
+	for res in h.food.contents:
+		parts.append("%s %d" % [ResourceDefs.display_name(res), h.food.contents[res]])
+	return ", ".join(parts) if not parts.is_empty() else "нет"
+
+
+## Двор и запасы жилья либо запас столовой (для панели здания).
+func household_text(b: Building) -> String:
+	var hs := villagers.household
+	var h := hs.stock_of(b.id)
+	if h == null:
+		return ""
+	if h.kind == &"canteen":
+		return "Вода: %d/%d\nЕда: %s (%d/%d)" % [h.water, h.water_cap, _food_text(h), h.food.used(), h.food.capacity]
+	var t := "Печь: %d/%d дров\nПоленница: %d/%d" % [h.stove, hs.stove_capacity(b.id), h.woodpile, hs.woodpile_capacity(b.id)]
+	t += "\nОгород: %s" % GARDEN_TEXT.get(h.garden_state, "")
+	if h.garden_state == &"growing":
+		t += " (%s, %d%%)" % [ResourceDefs.display_name(h.garden_crop), roundi(h.garden_fraction() * 100.0)]
+	elif h.garden_state == &"empty":
+		t += " (след.: %s)" % ResourceDefs.display_name(h.garden_crop)
+	t += "\nВода: %d/%d\nЕда: %s (%d/%d)" % [h.water, h.water_cap, _food_text(h), h.food.used(), h.food.capacity]
+	t += "\nСарай: " + ("куры и корова" if h.barn else "нет (цена: %s)" % _cost_text(HouseholdDefs.BARN_COST))
 	return t
 
 
@@ -488,6 +525,10 @@ func on_action(id: StringName) -> void:
 			_show_info()
 		&"upgrade":
 			con.upgrade(selected_building)
+			_show_info()
+		&"build_barn":
+			if villagers != null:
+				villagers.household.build_barn(selected_building)
 			_show_info()
 		&"restore":
 			restore_menu = true
