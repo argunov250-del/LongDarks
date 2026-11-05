@@ -8,6 +8,8 @@ var world_view: WorldView
 var economy: EconomySystem
 var construction: ConstructionSystem
 var production: ProductionSystem
+var villagers: VillagerSystem
+var villagers_view: VillagersView
 var buildings_view: BuildingsView
 var build_controller: BuildController
 
@@ -31,6 +33,10 @@ func _ready() -> void:
 	production = ProductionSystem.new(construction, economy)
 	SimRunner.sim.register_system(production)
 	production.attach(SimRunner.sim)
+	villagers = VillagerSystem.new(world_map, economy, construction, production)
+	SimRunner.sim.register_system(villagers)
+	villagers.attach(SimRunner.sim)
+	villagers.start_new_game()
 	world_view = WorldView.new()
 	world_view.name = "World"
 	add_child(world_view)
@@ -39,6 +45,11 @@ func _ready() -> void:
 	buildings_view.name = "Buildings"
 	add_child(buildings_view)
 	buildings_view.setup(construction)
+	villagers_view = VillagersView.new()
+	villagers_view.name = "Villagers"
+	add_child(villagers_view)
+	villagers_view.setup(villagers)
+	$UI/HUD.bind_villagers(villagers)
 	var rig: CameraRig = $CameraRig
 	rig.setup(world_map, $CameraRig/Camera3D)
 	SimRunner.sim.register_system(rig.save_system)
@@ -47,6 +58,8 @@ func _ready() -> void:
 	add_child(build_controller)
 	build_controller.setup(construction, $CameraRig/Camera3D, $UI/HUD, world_view, SimRunner.sim)
 	build_controller.production = production
+	build_controller.villagers = villagers
+	build_controller.villagers_view = villagers_view
 	print("LongDarks: main scene ready, world %dx%d, terrain verts %d" % [world_map.size, world_map.size, world_view.terrain_vertex_count])
 
 

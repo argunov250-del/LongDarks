@@ -9,6 +9,7 @@ extends Control
 signal build_selected(type_id: StringName)   # выбрано здание во вкладке строительства
 signal fell_requested                         # кнопка «Вырубка» во вкладках строительства
 signal action_pressed(id: StringName)         # кнопка панели действий (размещение/здание/руина)
+signal villager_card_requested(id: int)       # «Карточка» в списке жителей
 
 const MIN_TOUCH_DP := 48.0
 const REF_SHORT_SIDE_DP := 411.0  # типичная короткая сторона телефона в dp
@@ -29,7 +30,10 @@ var fab: Button              # портрет: плавающая кнопка
 var save_button: Button
 var load_button: Button
 var settings_button: Button
+var villagers_button: Button
+var priorities_button: Button
 var status_label: Label
+var villagers_ui: VillagersUi  # панели «Жители», «Приоритеты», уведомления
 
 var _top_bar: PanelContainer
 var _top_row: HBoxContainer
@@ -178,6 +182,17 @@ func do_settings() -> void:
 	_set_status("Настройки: скоро")
 
 
+## Подключает панели жителей к системе (main/тесты).
+func bind_villagers(system: VillagerSystem) -> void:
+	villagers_ui.bind(system, sim)
+
+
+func show_villagers_panel(panel_mode: StringName) -> void:
+	_menu_popup.visible = false
+	_sheet.visible = false
+	villagers_ui.show_panel(panel_mode)
+
+
 func toggle_menu() -> void:
 	if mode == LayoutMode.Mode.LANDSCAPE:
 		_menu_popup.visible = not _menu_popup.visible
@@ -260,10 +275,14 @@ func _build() -> void:
 	load_button.pressed.connect(do_load)
 	settings_button = _mk_button("Настройки")
 	settings_button.pressed.connect(do_settings)
+	villagers_button = _mk_button("Жители")
+	villagers_button.pressed.connect(show_villagers_panel.bind(VillagersUi.MODE_VILLAGERS))
+	priorities_button = _mk_button("Приоритеты")
+	priorities_button.pressed.connect(show_villagers_panel.bind(VillagersUi.MODE_PRIORITIES))
 	status_label = Label.new()
 	status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	status_label.visible = false
-	for c in [save_button, load_button, settings_button, status_label]:
+	for c in [villagers_button, priorities_button, save_button, load_button, settings_button, status_label]:
 		_menu_box.add_child(c)
 
 	# Ландшафт: нижняя док-панель и всплывающее меню.
@@ -291,6 +310,10 @@ func _build() -> void:
 	_bar_row = HFlowContainer.new()
 	_bar_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar_box.add_child(_bar_row)
+	villagers_ui = VillagersUi.new()
+	villagers_ui.name = "VillagersUi"
+	villagers_ui.villager_pressed.connect(func(id): villager_card_requested.emit(id))
+	add_child(villagers_ui)
 	fab = _mk_button("☰")
 	fab.pressed.connect(toggle_menu)
 	add_child(fab)
@@ -343,7 +366,7 @@ func _apply_layout() -> void:
 	var gap := roundi(6.0 * _dp)
 	for c in [_top_row, _tabs_row, _dock, _menu_box, _sheet_box]:
 		c.add_theme_constant_override("separation", gap)
-	for b in tab_buttons + [fell_button, menu_button, save_button, load_button, settings_button]:
+	for b in tab_buttons + [fell_button, menu_button, save_button, load_button, settings_button, villagers_button, priorities_button]:
 		b.custom_minimum_size = Vector2(0.0, touch)
 	for b in speed_buttons:
 		b.custom_minimum_size = Vector2(touch if land else touch * 0.85, touch)
@@ -404,6 +427,9 @@ func _apply_layout() -> void:
 	fab.offset_left = -r - fs
 	fab.offset_bottom = -bt
 	fab.offset_top = fab.offset_bottom - fs
+
+	# Панели жителей: под верхней панелью, над плавающей кнопкой.
+	villagers_ui.apply_layout(_dp, l, tp + touch + 2.0 * edge, r, bt + fs + gap)
 
 
 ## Размер вьюпорта; вне дерева (тесты) — типичный портретный экран.

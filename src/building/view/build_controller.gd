@@ -13,6 +13,7 @@ const INFO_REFRESH := 0.25
 const BRUSH_MIN := 2.0
 const BRUSH_MAX := 24.0
 const BRUSH_STEP := 2.0
+const VILLAGER_TAP_MIN := 1.8
 
 const REASON_TEXT := {
 	&"": "можно ставить",
@@ -25,6 +26,8 @@ const REASON_TEXT := {
 
 var con: ConstructionSystem
 var production: ProductionSystem  # опционально (main выставляет после setup)
+var villagers: VillagerSystem     # опционально: тап по жителю открывает карточку
+var villagers_view: VillagersView # опционально: подсветка выбранного
 var camera: Camera3D
 var hud: Hud
 var world_view: WorldView
@@ -37,6 +40,7 @@ var ghost_valid := false
 var ghost_reason: StringName = &""
 var selected_building := -1
 var selected_ruin := -1
+var selected_villager := -1
 var restore_menu := false
 var felling_mode := false
 var brush_radius := 6.0
@@ -66,6 +70,7 @@ func setup(construction: ConstructionSystem, cam: Camera3D, hud_in: Hud, view: W
 	hud.build_selected.connect(start_placement)
 	hud.action_pressed.connect(on_action)
 	hud.fell_requested.connect(start_felling_mode)
+	hud.villager_card_requested.connect(select_villager)
 	sim.bus.subscribe(ConstructionSystem.TOPIC_CHANGED, _on_changed)
 	_on_changed({})
 
@@ -274,6 +279,9 @@ func _update_brush() -> void:
 func clear_selection() -> void:
 	selected_building = -1
 	selected_ruin = -1
+	selected_villager = -1
+	if villagers_view != null:
+		villagers_view.set_selected(-1)
 	restore_menu = false
 	if not is_placing():
 		hud.hide_actions()
@@ -293,7 +301,31 @@ func select_ruin(rid: int) -> void:
 		_show_info()
 
 
+func select_villager(id: int) -> void:
+	if villagers == null or villagers.get_villager(id) == null:
+		return
+	cancel_placement()
+	cancel_felling_mode()
+	clear_selection()
+	selected_villager = id
+	if villagers_view != null:
+		villagers_view.set_selected(id)
+	_show_info()
+
+
+## Радиус тапа по жителю растёт с удалением камеры.
+func villager_pick_radius(p: Vector3) -> float:
+	if camera == null or not camera.is_inside_tree():
+		return VILLAGER_TAP_MIN
+	return clampf(camera.global_position.distance_to(p) * 0.035, VILLAGER_TAP_MIN, 8.0)
+
+
 func select_at(p: Vector3) -> void:
+	if villagers != null:
+		var v := villagers.villager_near(p, villager_pick_radius(p))
+		if v != null:
+			select_villager(v.id)
+			return
 	var b := con.building_at(p)
 	if b != null:
 		select_building(b.id)
@@ -305,8 +337,25 @@ func select_at(p: Vector3) -> void:
 		clear_selection()
 
 
+func villager_card_text(v: Villager) -> String:
+	var traits: Array[String] = []
+	for t in v.traits:
+		traits.append(TraitDefs.display_name(t))
+	var t := "%s%s\n%s, %s, %s" % [v.display_name, " (герой)" if v.is_hero else "", v.profession_name(), VillagerDefs.sex_label(v.sex), VillagerDefs.age_text(v.age)]
+	t += "\nЧерты: " + ", ".join(traits)
+	t += "\nСейчас: " + villagers.task_text(v)
+	t += "\n" + v.backstory
+	return t
+
+
 func _show_info() -> void:
-	if selected_building >= 0:
+	if selected_villager >= 0:
+		var v := villagers.get_villager(selected_villager) if villagers != null else null
+		if v == null:
+			clear_selection()
+			return
+		hud.show_actions(villager_card_text(v), [[&"close", "Закрыть", true]])
+	elif selected_building >= 0:
 		var b := con.get_building(selected_building)
 		if b == null:
 			clear_selection()
@@ -316,6 +365,8 @@ func _show_info() -> void:
 			acts.append([&"pause", "Продолжить" if production.is_paused(b.id) else "Пауза", true])
 			if production.available_recipes(b.id).size() > 1:
 				acts.append([&"recipe", "Рецепт", true])
+		if villagers != null and (not b.is_done() or production != null and production.is_producing_building(b.id) or BuildingDefs.is_housing(b.type)):
+			acts.append([&"bprio", _priority_label(b.id), true])
 		acts.append([&"upgrade", _upgrade_label(b), con.can_upgrade(b.id)])
 		if not b.is_done() and b.stage == BuildingDefs.Stage.FOUNDATION and not b.stage_paid and b.progress <= 0.0:
 			acts.append([&"cancel_building", "Отменить чертёж", true])
@@ -345,6 +396,11 @@ func _show_info() -> void:
 			[&"restore", "Восстановить", not busy],
 			[&"dismantle", "Разбирается…" if busy else "Разобрать", not busy],
 			[&"close", "Закрыть", true]])
+
+
+func _priority_label(id: int) -> String:
+	var p := villagers.building_priority(id)
+	return "Приоритет: авто" if p < 0 else "Приоритет: " + TaskDefs.PRIORITY_NAMES[p]
 
 
 func _upgrade_label(b: Building) -> String:
@@ -424,6 +480,11 @@ func on_action(id: StringName) -> void:
 				var i := rs.find(production.recipe_of(selected_building))
 				production.set_recipe(selected_building, rs[(i + 1) % rs.size()])
 			_show_info()
+		&"bprio":
+			if villagers != null:
+				var p := villagers.building_priority(selected_building) + 1  # авто -> 0 -> 1 -> 2 -> 3 -> авто
+				villagers.set_building_priority(selected_building, -1 if p > TaskDefs.PRIORITY_MAX else p)
+			_show_info()
 		&"upgrade":
 			con.upgrade(selected_building)
 			_show_info()
@@ -458,7 +519,7 @@ func _process(dt: float) -> void:
 	_acc += dt
 	if _acc >= INFO_REFRESH:
 		_acc = 0.0
-		if selected_building >= 0 or selected_ruin >= 0:
+		if selected_building >= 0 or selected_ruin >= 0 or selected_villager >= 0:
 			_show_info()
 
 
