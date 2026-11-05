@@ -10,6 +10,9 @@ const TAP_MAX_TIME_MS := 400
 const PICK_STEP := 0.5
 const PICK_MAX := 600.0
 const INFO_REFRESH := 0.25
+const BRUSH_MIN := 2.0
+const BRUSH_MAX := 24.0
+const BRUSH_STEP := 2.0
 
 const REASON_TEXT := {
 	&"": "можно ставить",
@@ -35,8 +38,17 @@ var ghost_reason: StringName = &""
 var selected_building := -1
 var selected_ruin := -1
 var restore_menu := false
+var felling_mode := false
+var brush_radius := 6.0
+var brush_circle := true
+var brush_pos := Vector3.ZERO
+var brush_cells: Array[Vector2i] = []
+var economy: EconomySystem  # опционально: деревья в мире скрываются по запасам
 
 var _ghost: Node3D
+var _brush: MeshInstance3D
+var _brush_drawn := -1.0
+var _brush_circle_drawn := true
 var _ghost_valid_drawn := -1
 var _ghost_type_drawn: StringName = &""
 var _press_pos := Vector2.ZERO
@@ -53,6 +65,7 @@ func setup(construction: ConstructionSystem, cam: Camera3D, hud_in: Hud, view: W
 	map = con.world
 	hud.build_selected.connect(start_placement)
 	hud.action_pressed.connect(on_action)
+	hud.fell_requested.connect(start_felling_mode)
 	sim.bus.subscribe(ConstructionSystem.TOPIC_CHANGED, _on_changed)
 	_on_changed({})
 
@@ -60,6 +73,7 @@ func setup(construction: ConstructionSystem, cam: Camera3D, hud_in: Hud, view: W
 func _on_changed(_p: Dictionary) -> void:
 	if world_view != null:
 		world_view.sync_ruins(con)
+		world_view.sync_trees(con.economy.deposits)
 
 
 # ---------- размещение ----------
@@ -71,6 +85,7 @@ func is_placing() -> bool:
 func start_placement(type: StringName) -> void:
 	if not BuildingDefs.exists(type):
 		return
+	cancel_felling_mode()
 	clear_selection()
 	placing_type = type
 	ghost_rot = 0.0
@@ -176,6 +191,84 @@ func _show_placement_bar() -> void:
 		[&"cancel", "Отмена", true]])
 
 
+# ---------- вырубка ----------
+
+func start_felling_mode() -> void:
+	cancel_placement()
+	clear_selection()
+	felling_mode = true
+	_brush_drawn = -1.0
+	_update_brush()
+
+
+func cancel_felling_mode() -> void:
+	if not felling_mode:
+		return
+	felling_mode = false
+	brush_cells = []
+	if _brush != null:
+		_brush.queue_free()
+		_brush = null
+	hud.hide_actions()
+
+
+func change_brush(delta: float) -> void:
+	brush_radius = clampf(brush_radius + delta, BRUSH_MIN, BRUSH_MAX)
+	_update_brush()
+
+
+func toggle_brush_shape() -> void:
+	brush_circle = not brush_circle
+	_update_brush()
+
+
+## Помечает клетки под кистью; режим закрывается. Возвращает число заданий.
+func confirm_felling() -> int:
+	if not felling_mode:
+		return 0
+	_update_brush()
+	var n := con.start_felling(brush_cells)
+	cancel_felling_mode()
+	return n
+
+
+func _update_brush() -> void:
+	if not felling_mode:
+		return
+	var hit = pick_ground()
+	if hit != null:
+		brush_pos = hit
+	brush_cells = con.fell_cells_in_brush(brush_pos, brush_radius, brush_circle)
+	if _brush == null or _brush_drawn != brush_radius or _brush_circle_drawn != brush_circle:
+		if _brush != null:
+			_brush.queue_free()
+		_brush = MeshInstance3D.new()
+		_brush.name = "FellBrush"
+		if brush_circle:
+			var cm := CylinderMesh.new()
+			cm.top_radius = brush_radius
+			cm.bottom_radius = brush_radius
+			cm.height = 0.3
+			cm.radial_segments = 24
+			_brush.mesh = cm
+		else:
+			var bm := BoxMesh.new()
+			bm.size = Vector3(brush_radius * 2.0, 0.3, brush_radius * 2.0)
+			_brush.mesh = bm
+		_brush.material_override = BuildingMeshes._mat(BuildingMeshes.GHOST_OK, true)
+		add_child(_brush)
+		_brush_drawn = brush_radius
+		_brush_circle_drawn = brush_circle
+	_brush.position = Vector3(brush_pos.x, con.ground_height(brush_pos) + 0.2, brush_pos.z)
+	hud.show_actions("Вырубка: %s, радиус %d м\nДеревьев в %d клетках леса" % [
+			"круг" if brush_circle else "квадрат", roundi(brush_radius), brush_cells.size()], [
+		[&"fell_shape", "Круг" if not brush_circle else "Квадрат", true],
+		[&"fell_minus", "−", brush_radius > BRUSH_MIN],
+		[&"fell_plus", "+", brush_radius < BRUSH_MAX],
+		[&"fell_confirm", "Вырубить", not brush_cells.is_empty()],
+		[&"fell_cancel", "Отмена", true]])
+
+
 # ---------- выбор по тапу ----------
 
 func clear_selection() -> void:
@@ -224,6 +317,8 @@ func _show_info() -> void:
 			if production.available_recipes(b.id).size() > 1:
 				acts.append([&"recipe", "Рецепт", true])
 		acts.append([&"upgrade", _upgrade_label(b), con.can_upgrade(b.id)])
+		if not b.is_done() and b.stage == BuildingDefs.Stage.FOUNDATION and not b.stage_paid and b.progress <= 0.0:
+			acts.append([&"cancel_building", "Отменить чертёж", true])
 		acts.append([&"close", "Закрыть", true])
 		hud.show_actions(_building_text(b), acts)
 	elif selected_ruin >= 0:
@@ -242,6 +337,8 @@ func _show_info() -> void:
 		var title := "Руины"
 		if busy:
 			title += "\nРазбор: %d%%" % roundi(con.dismantle_fraction(selected_ruin) * 100.0)
+			if con.is_dismantle_blocked(selected_ruin):
+				title += " — склады полны"
 		else:
 			title += "\nМатериалы при разборе: " + _cost_text(con.ruin_yield(selected_ruin))
 		hud.show_actions(title, [
@@ -267,6 +364,8 @@ func _building_text(b: Building) -> String:
 			t += " — ждёт ресурсы: " + _cost_text(b.stage_cost())
 		&"frozen":
 			t += " — земля промёрзла"
+		&"forest":
+			t += " — ждёт вырубки"
 	return t
 
 
@@ -294,6 +393,16 @@ func production_text(id: int) -> String:
 ## Обработчик кнопок панели действий.
 func on_action(id: StringName) -> void:
 	match id:
+		&"fell_shape":
+			toggle_brush_shape()
+		&"fell_minus":
+			change_brush(-BRUSH_STEP)
+		&"fell_plus":
+			change_brush(BRUSH_STEP)
+		&"fell_confirm":
+			confirm_felling()
+		&"fell_cancel":
+			cancel_felling_mode()
 		&"rotate":
 			rotate_ghost()
 		&"confirm":
@@ -301,6 +410,9 @@ func on_action(id: StringName) -> void:
 		&"cancel":
 			cancel_placement()
 		&"close":
+			clear_selection()
+		&"cancel_building":
+			con.cancel_building(selected_building)
 			clear_selection()
 		&"pause":
 			if production != null:
@@ -340,6 +452,9 @@ func _process(dt: float) -> void:
 	if is_placing():
 		_update_ghost(false)
 		return
+	if felling_mode:
+		_update_brush()
+		return
 	_acc += dt
 	if _acc >= INFO_REFRESH:
 		_acc = 0.0
@@ -348,7 +463,7 @@ func _process(dt: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if is_placing():
+	if is_placing() or felling_mode:
 		return
 	if event is InputEventScreenTouch and event.index > 0:
 		_pressing = false  # многопальцевый жест камеры — не тап

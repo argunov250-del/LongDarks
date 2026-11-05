@@ -6,6 +6,9 @@ var map: WorldMap
 var terrain_vertex_count := 0
 var _ruin_slots: Dictionary = {}   # индекс клетки -> [индекс экземпляра, исходный Transform3D]
 var _ruin_mm: MultiMesh
+var _tree_slots: Dictionary = {}   # индекс клетки -> [[индекс экземпляра, исходный Transform3D], ...]
+var _tree_mm: MultiMesh
+var _trees_rev := -1
 
 const COLORS := {
 	WorldMap.Terrain.GROUND: Color(0.50, 0.46, 0.34),
@@ -130,7 +133,11 @@ func _build_props() -> void:
 						var tz := z + (map.hash01(cx, cz, 30 + k) - 0.5) * cs * 0.7
 						var s := 0.8 + map.hash01(cx, cz, 40 + k) * 0.7
 						var b := Basis.from_scale(Vector3(s, s, s))
-						trees.append(Transform3D(b, Vector3(tx, map.height_at(tx, tz) + 1.5 * s, tz)))
+						var txf := Transform3D(b, Vector3(tx, map.height_at(tx, tz) + 1.5 * s, tz))
+						if not _tree_slots.has(cz * map.size + cx):
+							_tree_slots[cz * map.size + cx] = []
+						_tree_slots[cz * map.size + cx].append([trees.size(), txf])
+						trees.append(txf)
 				WorldMap.Terrain.GROUND, WorldMap.Terrain.POISON:
 					if map.hash01(cx, cz, 50) < 0.06:
 						var s := 0.4 + map.hash01(cx, cz, 51) * 0.6
@@ -156,6 +163,9 @@ func _build_props() -> void:
 	cone.radial_segments = 5
 	cone.rings = 1
 	_make_multimesh("Trees", cone, Color(0.18, 0.28, 0.20).lerp(SNOW, 0.25), trees)
+	var trees_node := get_node_or_null("Trees") as MultiMeshInstance3D
+	_tree_mm = trees_node.multimesh if trees_node != null else null
+	_trees_rev = -1
 
 	var rock := SphereMesh.new()
 	rock.radial_segments = 5
@@ -187,3 +197,17 @@ func sync_ruins(con: ConstructionSystem) -> void:
 		if not con.is_ruin_active(cell_idx):
 			xf = Transform3D(Basis.from_scale(Vector3.ZERO), xf.origin)
 		_ruin_mm.set_instance_transform(slot[0], xf)
+
+
+## Скрывает деревья клеток, где лес вырублен (запас Deposits = 0).
+func sync_trees(deposits: Deposits) -> void:
+	if _tree_mm == null or deposits.revision == _trees_rev:
+		return
+	_trees_rev = deposits.revision
+	for idx in _tree_slots:
+		var gone := deposits.remaining(Vector2i(idx % map.size, idx / map.size)) <= 0
+		for slot in _tree_slots[idx]:
+			var xf: Transform3D = slot[1]
+			if gone:
+				xf = Transform3D(Basis.from_scale(Vector3.ZERO), xf.origin)
+			_tree_mm.set_instance_transform(slot[0], xf)

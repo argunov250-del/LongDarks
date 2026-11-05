@@ -13,6 +13,8 @@ const SALT_RUINS := 202
 
 var world: WorldMap
 var _taken: Dictionary = {}  # int индекс клетки -> int взято
+## Растёт при любом изменении запасов (дешёвая проверка для визуала).
+var revision: int = 0
 
 
 func _init(world_in: WorldMap = null) -> void:
@@ -67,6 +69,7 @@ func take(cell: Vector2i, amount: int) -> int:
 	if got > 0:
 		var i := _index(cell)
 		_taken[i] = _taken.get(i, 0) + got
+		revision += 1
 	return got
 
 
@@ -79,6 +82,7 @@ func to_dict() -> Dictionary:
 
 func from_dict(d: Dictionary) -> void:
 	_taken.clear()
+	revision += 1
 	if d.get("taken") is Dictionary:
 		for k in d["taken"]:
 			var n := SaveManager.to_int(d["taken"][k], 0)

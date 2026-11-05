@@ -7,6 +7,7 @@ extends Control
 ## чтобы жесты камеры работали вне элементов управления.
 
 signal build_selected(type_id: StringName)   # выбрано здание во вкладке строительства
+signal fell_requested                         # кнопка «Вырубка» во вкладках строительства
 signal action_pressed(id: StringName)         # кнопка панели действий (размещение/здание/руина)
 
 const MIN_TOUCH_DP := 48.0
@@ -22,6 +23,7 @@ var date_label: Label
 var time_label: Label
 var speed_buttons: Array[Button] = []
 var tab_buttons: Array[Button] = []
+var fell_button: Button      # режим вырубки леса (рядом с вкладками)
 var menu_button: Button      # ландшафт: кнопка меню в верхней панели
 var fab: Button              # портрет: плавающая кнопка
 var save_button: Button
@@ -237,6 +239,10 @@ func _build() -> void:
 		t.pressed.connect(select_tab.bind(i))
 		tab_buttons.append(t)
 		_tabs_row.add_child(t)
+	fell_button = _mk_button("Вырубка")
+	fell_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	fell_button.pressed.connect(func(): fell_requested.emit())
+	_tabs_row.add_child(fell_button)
 	_tab_panel = PanelContainer.new()
 	_tab_title = Label.new()
 	_tab_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -337,7 +343,7 @@ func _apply_layout() -> void:
 	var gap := roundi(6.0 * _dp)
 	for c in [_top_row, _tabs_row, _dock, _menu_box, _sheet_box]:
 		c.add_theme_constant_override("separation", gap)
-	for b in tab_buttons + [menu_button, save_button, load_button, settings_button]:
+	for b in tab_buttons + [fell_button, menu_button, save_button, load_button, settings_button]:
 		b.custom_minimum_size = Vector2(0.0, touch)
 	for b in speed_buttons:
 		b.custom_minimum_size = Vector2(touch if land else touch * 0.85, touch)

@@ -132,7 +132,7 @@ func test_place_confirm_and_building_panel() -> void:
 	assert_true(id > 0)
 	assert_false(bc.is_placing())
 	assert_eq(bc.selected_building, id)
-	assert_eq(hud._bar_ids, [&"upgrade", &"close"])
+	assert_eq(hud._bar_ids, [&"upgrade", &"cancel_building", &"close"])
 	assert_true(hud._bar_buttons[0].disabled, "cannot upgrade while building")
 	bc.select_at(site)
 	assert_eq(bc.selected_building, id, "tap selects building")
@@ -167,4 +167,37 @@ func test_ruin_panel_dismantle_and_restore_menu() -> void:
 	bc.on_action(&"dismantle")
 	assert_true(con.is_dismantling(rid))
 	assert_true(hud._bar_buttons[1].disabled)
+	_free_rig(r)
+
+
+func test_felling_brush_mode_and_hud_button() -> void:
+	var r := _rig()
+	var con: ConstructionSystem = r["con"]
+	var bc: BuildController = r["bc"]
+	var hud: Hud = r["hud"]
+	var world: WorldMap = r["world"]
+	var site := Vector3(-1, 0, -1)
+	for cz in range(10, 100):
+		for cx in range(10, 100):
+			if site.x < 0 and world.cell_type(cx, cz) == WorldMap.Terrain.FOREST:
+				site = world.cell_center(cx, cz)
+	hud.fell_button.pressed.emit()
+	assert_true(bc.felling_mode)
+	bc.brush_pos = site
+	bc._update_brush()
+	assert_true(bc.brush_cells.size() > 0)
+	assert_true(&"fell_confirm" in hud._bar_ids and &"fell_cancel" in hud._bar_ids)
+	var r0 := bc.brush_radius
+	bc.on_action(&"fell_plus")
+	assert_true(bc.brush_radius > r0)
+	bc.on_action(&"fell_shape")
+	assert_false(bc.brush_circle)
+	var n := bc.confirm_felling()
+	assert_true(n > 0)
+	assert_eq(con.felling_count(), n)
+	assert_false(bc.felling_mode)
+	hud.fell_button.pressed.emit()
+	bc.on_action(&"fell_cancel")
+	assert_false(bc.felling_mode)
+	assert_false(hud.is_actions_visible())
 	_free_rig(r)

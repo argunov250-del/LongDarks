@@ -20,6 +20,8 @@ const TOPIC_COMPLETED := &"building_completed"
 const TOPIC_UPGRADED := &"building_upgraded"
 const TOPIC_RUIN_RESTORED := &"ruin_restored"
 const TOPIC_RUIN_DISMANTLED := &"ruin_dismantled"
+const TOPIC_CANCELLED := &"building_cancelled"
+const TOPIC_FELLED := &"cell_felled"  # клетка леса вырублена: {"cell": Vector2i}
 const TOPIC_CHANGED := &"construction_changed"  # состав зданий/руин изменился
 
 var world: WorldMap
@@ -32,6 +34,8 @@ var build_speed_multiplier: float = 1.0
 
 var _consumed: Dictionary = {}      # int ruin id -> true (разобрана/восстановлена)
 var _jobs: Dictionary = {}          # int ruin id -> float прогресс разбора
+var _fell: Dictionary = {}          # int индекс клетки леса -> float прогресс вырубки
+var _fell_blocked := false          # хотя бы одна вырубка ждёт места на складах
 var _next_id: int = 1
 var _sim: Simulation
 
@@ -116,7 +120,7 @@ func ruin_yield(rid: int) -> Dictionary:
 	return out
 
 
-## Проверка места: {"ok": bool, "reason": &"" | &"outside" | &"water" | &"slope" | &"overlap"}.
+## Проверка места: {"ok": bool, "reason": &"" | &"outside" | &"water" | &"slope" | &"overlap"}. Лес не мешает: стройка ждёт вырубки.
 func validate_placement(type: StringName, pos: Vector3, rot: float, ignore_id: int = -1) -> Dictionary:
 	if not BuildingDefs.exists(type):
 		return {"ok": false, "reason": &"type"}
@@ -148,6 +152,33 @@ func validate_placement(type: StringName, pos: Vector3, rot: float, ignore_id: i
 	return {"ok": true, "reason": &""}
 
 
+## Клетки леса с деревьями под основанием.
+func footprint_tree_cells(c: Vector2, size: Vector2, rot: float) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var pts := Footprint.corners(c, size, rot)
+	var lo := pts[0]
+	var hi := pts[0]
+	for p in pts:
+		lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.y))
+		hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.y))
+	var a := world.cell_of(lo.x, lo.y)
+	var z := world.cell_of(hi.x, hi.y)
+	var cs := world.cell_size
+	for cz in range(maxi(a.y, 0), mini(z.y, world.size - 1) + 1):
+		for cx in range(maxi(a.x, 0), mini(z.x, world.size - 1) + 1):
+			if world.cell_type(cx, cz) != WorldMap.Terrain.FOREST:
+				continue
+			if economy.deposits.remaining(Vector2i(cx, cz)) <= 0:
+				continue
+			if Footprint.overlaps(c, size, rot, Vector2((cx + 0.5) * cs, (cz + 0.5) * cs), Vector2(cs, cs), 0.0, 0.0):
+				out.append(Vector2i(cx, cz))
+	return out
+
+
+func _building_tree_cells(b: Building) -> Array[Vector2i]:
+	return footprint_tree_cells(b.xz(), b.size(), b.rot)
+
+
 func ground_height(pos: Vector3) -> float:
 	return world.height_at(pos.x, pos.z)
 
@@ -170,9 +201,31 @@ func _create(type: StringName, pos: Vector3, rot: float, restored: bool) -> int:
 	b.rot = rot
 	b.restored = restored
 	buildings[b.id] = b
+	start_felling(_building_tree_cells(b))  # чертёж на лесе: сразу задания вырубки
 	_emit(TOPIC_PLACED, {"id": b.id, "type": type})
 	_emit(TOPIC_CHANGED, {})
 	return b.id
+
+
+## Отмена чертежа (ничего ещё не оплачено): снимает здание и его задания вырубки,
+## которые не нужны другим чертежам. Уже вырубленное остаётся.
+func cancel_building(id: int) -> bool:
+	var b := get_building(id)
+	if b == null or b.is_done() or b.stage != BuildingDefs.Stage.FOUNDATION or b.stage_paid or b.progress > 0.0:
+		return false
+	var cells := _building_tree_cells(b)
+	buildings.erase(id)
+	var keep := {}
+	for o: Building in buildings.values():
+		for c in _building_tree_cells(o):
+			keep[_cell_idx(c)] = true
+	for c in cells:
+		var i := _cell_idx(c)
+		if not keep.has(i) and _fell.has(i):
+			_fell.erase(i)
+	_emit(TOPIC_CANCELLED, {"id": id})
+	_emit(TOPIC_CHANGED, {})
+	return true
 
 
 func can_upgrade(id: int) -> bool:
@@ -230,19 +283,113 @@ func _exhaust_scrap(cell: Vector2i) -> int:
 	return economy.deposits.take(cell, economy.deposits.remaining(cell))
 
 
-func _finish_dismantle(rid: int) -> void:
+## Разбор дошёл до конца, но складам не хватает места (ждёт, ничего не теряется).
+func is_dismantle_blocked(rid: int) -> bool:
+	return _jobs.has(rid) and _jobs[rid] >= BuildingDefs.DISMANTLE_WORK
+
+
+## Атомарно: либо весь выход ложится на склады, либо ничего (работа ждёт).
+func _try_finish_dismantle(rid: int) -> bool:
 	var r: Dictionary = ruins[rid]
 	var y := ruin_yield(rid)
-	var lost := {}
+	var need := 0
 	for res in y:
-		var got := economy.deposit(res, y[res])
-		if got < y[res]:
-			lost[res] = y[res] - got
+		need += y[res]
+	if need > economy.total_free_space():
+		return false
+	for res in y:
+		economy.deposit(res, y[res])
 	_exhaust_scrap(r["cell"])
 	_jobs.erase(rid)
 	_consumed[rid] = true
-	_emit(TOPIC_RUIN_DISMANTLED, {"ruin": rid, "yield": y, "lost": lost})
+	_emit(TOPIC_RUIN_DISMANTLED, {"ruin": rid, "yield": y})
 	_emit(TOPIC_CHANGED, {})
+	return true
+
+
+# ---------- вырубка ----------
+
+func _cell_idx(cell: Vector2i) -> int:
+	return cell.y * world.size + cell.x
+
+
+func _idx_cell(idx: int) -> Vector2i:
+	return Vector2i(idx % world.size, idx / world.size)
+
+
+## Клетки леса с деревьями под кистью: круг (расстояние до центра клетки) или квадрат.
+func fell_cells_in_brush(center: Vector3, radius: float, circle: bool) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var a := world.cell_of(center.x - radius, center.z - radius)
+	var z := world.cell_of(center.x + radius, center.z + radius)
+	for cz in range(maxi(a.y, 0), mini(z.y, world.size - 1) + 1):
+		for cx in range(maxi(a.x, 0), mini(z.x, world.size - 1) + 1):
+			if world.cell_type(cx, cz) != WorldMap.Terrain.FOREST:
+				continue
+			var cell := Vector2i(cx, cz)
+			if economy.deposits.remaining(cell) <= 0:
+				continue
+			var cc := world.cell_center(cx, cz)
+			var dx := absf(cc.x - center.x)
+			var dz := absf(cc.z - center.z)
+			if (circle and dx * dx + dz * dz <= radius * radius) or (not circle and maxf(dx, dz) <= radius):
+				out.append(cell)
+	return out
+
+
+## Помечает клетки на вырубку; возвращает число новых заданий.
+func start_felling(cells: Array[Vector2i]) -> int:
+	var n := 0
+	for cell in cells:
+		if economy.deposits.resource_at(cell) != &"logs" or economy.deposits.remaining(cell) <= 0:
+			continue
+		var i := _cell_idx(cell)
+		if not _fell.has(i):
+			_fell[i] = 0.0
+			n += 1
+	if n > 0:
+		_emit(TOPIC_CHANGED, {})
+	return n
+
+
+func is_felling(cell: Vector2i) -> bool:
+	return _fell.has(_cell_idx(cell))
+
+
+func felling_count() -> int:
+	return _fell.size()
+
+
+## Есть вырубка, ждущая места на складах.
+func is_felling_blocked() -> bool:
+	return _fell_blocked
+
+
+func has_trees(cell: Vector2i) -> bool:
+	return economy.deposits.resource_at(cell) == &"logs" and economy.deposits.remaining(cell) > 0
+
+
+func _tick_felling(work: float) -> void:
+	_fell_blocked = false
+	var changed := false
+	for i in _fell.keys():
+		var cell := _idx_cell(i)
+		var p: float = _fell[i] + work
+		while p >= BuildingDefs.FELL_WORK_PER_LOG and economy.deposits.remaining(cell) > 0:
+			if economy.total_free_space() < 1:
+				p = BuildingDefs.FELL_WORK_PER_LOG  # ждём места, прогресс не копится сверх одного бревна
+				_fell_blocked = true
+				break
+			economy.deposit(&"logs", economy.deposits.take(cell, 1))
+			p -= BuildingDefs.FELL_WORK_PER_LOG
+		if economy.deposits.remaining(cell) <= 0:
+			_fell.erase(i)
+			_emit(TOPIC_FELLED, {"cell": cell})
+			changed = true
+		else:
+			_fell[i] = p
+	if changed:
+		_emit(TOPIC_CHANGED, {})
 
 
 # ---------- тик ----------
@@ -256,9 +403,10 @@ func tick(sim: Simulation, dt: float) -> void:
 		if not b.is_done():
 			_advance(b, work)
 	for rid in _jobs.keys():
-		_jobs[rid] += work
+		_jobs[rid] = minf(_jobs[rid] + work, BuildingDefs.DISMANTLE_WORK)
 		if _jobs[rid] >= BuildingDefs.DISMANTLE_WORK:
-			_finish_dismantle(rid)
+			_try_finish_dismantle(rid)
+	_tick_felling(work)
 
 
 func _advance(b: Building, work: float) -> void:
@@ -266,6 +414,10 @@ func _advance(b: Building, work: float) -> void:
 	while not b.is_done() and guard < 8:
 		guard += 1
 		if not b.stage_paid:
+			if b.stage == BuildingDefs.Stage.FOUNDATION and not _building_tree_cells(b).is_empty():
+				b.blocked = &"forest"
+				start_felling(_building_tree_cells(b))
+				return
 			if b.stage == BuildingDefs.Stage.FOUNDATION and ground_frozen:
 				b.blocked = &"frozen"
 				return
@@ -321,7 +473,10 @@ func save_state() -> Dictionary:
 	var jobs := {}
 	for rid in _jobs:
 		jobs[str(rid)] = _jobs[rid]
-	return {"next_id": _next_id, "buildings": list, "consumed": cons, "jobs": jobs}
+	var fell := {}
+	for i in _fell:
+		fell[str(i)] = _fell[i]
+	return {"next_id": _next_id, "buildings": list, "consumed": cons, "jobs": jobs, "felling": fell}
 
 
 func load_state(d: Dictionary) -> void:
@@ -329,6 +484,8 @@ func load_state(d: Dictionary) -> void:
 	buildings.clear()
 	_consumed.clear()
 	_jobs.clear()
+	_fell.clear()
+	_fell_blocked = false
 	if d.get("buildings") is Array:
 		for e in d["buildings"]:
 			if e is Dictionary:
@@ -343,6 +500,11 @@ func load_state(d: Dictionary) -> void:
 			var rid := SaveManager.to_int(k, -1)
 			if ruins.has(rid) and not _consumed.has(rid):
 				_jobs[rid] = float(d["jobs"][k])
+	if d.get("felling") is Dictionary:
+		for k in d["felling"]:
+			var i := SaveManager.to_int(k, -1)
+			if i >= 0 and i < world.size * world.size and economy.deposits.resource_at(_idx_cell(i)) == &"logs":
+				_fell[i] = float(d["felling"][k])
 	_next_id = SaveManager.to_int(d.get("next_id"), 1)
 	for id in buildings:
 		_next_id = maxi(_next_id, id + 1)

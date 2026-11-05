@@ -19,6 +19,7 @@ const DISMANTLE_STONE_MIN := 1        # плюс случайно 0..2 по хе
 const DISMANTLE_PLANKS_MIN := 0       # плюс случайно 0..2
 const SALT_DISMANTLE_STONE := 301
 const SALT_DISMANTLE_PLANKS := 302
+const FELL_WORK_PER_LOG := 2.0        # работа на одно бревно (потом — жители)
 const WAREHOUSE_CAPACITY := 400
 const CELLAR_CAPACITY := 150
 
