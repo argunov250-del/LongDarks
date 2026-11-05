@@ -8,7 +8,7 @@ enum Tab { HOUSING, PRODUCTION, SOCIAL, DEFENSE }
 const STAGE_NAMES: Array[String] = ["Фундамент", "Стены", "Крыша", "Готово"]
 
 ## --- Плейсхолдеры баланса ---
-const BUILD_RATE := 1.0               # единиц работы в секунду на стройку (потом — жители)
+const BUILD_RATE := 1.0               # базовая скорость одного жителя (работа/с); без жителей — на стройку
 const MAX_SLOPE := 0.35               # макс. перепад высот / длинная сторона основания
 const BUILD_GAP := 0.3                # зазор между зданиями, м
 const MAP_MARGIN := 0.5               # отступ от края карты, м
@@ -19,7 +19,7 @@ const DISMANTLE_STONE_MIN := 1        # плюс случайно 0..2 по хе
 const DISMANTLE_PLANKS_MIN := 0       # плюс случайно 0..2
 const SALT_DISMANTLE_STONE := 301
 const SALT_DISMANTLE_PLANKS := 302
-const FELL_WORK_PER_LOG := 2.0        # работа на одно бревно (потом — жители)
+const FELL_WORK_PER_LOG := 2.0        # работа на одно бревно
 const WAREHOUSE_CAPACITY := 400
 const CELLAR_CAPACITY := 150
 
@@ -27,9 +27,9 @@ const CELLAR_CAPACITY := 150
 # Цены стадий: фундамент / стены / крыша.
 const _DEFS := {
 	# жильё (цепочка улучшений)
-	&"dugout": ["Землянка", Tab.HOUSING, Vector2(4, 4), [{&"logs": 2}, {&"logs": 4}, {&"logs": 2}], [8.0, 12.0, 8.0], &"izba", 1.4, {}],
-	&"izba": ["Изба", Tab.HOUSING, Vector2(5, 5), [{&"stone": 3, &"logs": 2}, {&"logs": 8, &"planks": 2}, {&"planks": 6}], [12.0, 20.0, 14.0], &"stone_house", 2.4, {}],
-	&"stone_house": ["Каменный дом", Tab.HOUSING, Vector2(6, 6), [{&"stone": 8}, {&"stone": 14, &"cement": 2}, {&"planks": 8, &"scrap_metal": 4}], [18.0, 30.0, 20.0], &"", 3.0, {}],
+	&"dugout": ["Землянка", Tab.HOUSING, Vector2(4, 4), [{&"logs": 2}, {&"logs": 4}, {&"logs": 2}], [8.0, 12.0, 8.0], &"izba", 1.4, {"firewood": 10}],
+	&"izba": ["Изба", Tab.HOUSING, Vector2(5, 5), [{&"stone": 3, &"logs": 2}, {&"logs": 8, &"planks": 2}, {&"planks": 6}], [12.0, 20.0, 14.0], &"stone_house", 2.4, {"firewood": 20}],
+	&"stone_house": ["Каменный дом", Tab.HOUSING, Vector2(6, 6), [{&"stone": 8}, {&"stone": 14, &"cement": 2}, {&"planks": 8, &"scrap_metal": 4}], [18.0, 30.0, 20.0], &"", 3.0, {"firewood": 30}],
 	# производство
 	&"sawmill": ["Пилорама", Tab.PRODUCTION, Vector2(6, 4), [{&"stone": 3, &"logs": 2}, {&"logs": 6, &"planks": 2}, {&"planks": 4, &"scrap_metal": 4}], [12.0, 18.0, 12.0], &"", 2.2, {}],
 	&"oil_press": ["Маслобойня", Tab.PRODUCTION, Vector2(4, 4), [{&"stone": 3}, {&"planks": 6, &"scrap_metal": 3}, {&"planks": 4}], [10.0, 16.0, 10.0], &"", 2.2, {}],
@@ -137,3 +137,12 @@ static func storage_capacity(id: StringName) -> int:
 
 static func is_cellar(id: StringName) -> bool:
 	return _DEFS.has(id) and _DEFS[id][7].get("cellar", false)
+
+
+## Вместимость запаса дров жилья (0 — не жильё). Расход/отопление — шаг 11.
+static func firewood_capacity(id: StringName) -> int:
+	return _DEFS[id][7].get("firewood", 0) if _DEFS.has(id) else 0
+
+
+static func is_housing(id: StringName) -> bool:
+	return firewood_capacity(id) > 0

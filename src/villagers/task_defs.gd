@@ -1,0 +1,68 @@
+class_name TaskDefs
+extends RefCounted
+## Категории задач и ВЕСЬ баланс работы жителей (плейсхолдеры) — одно место.
+## Приоритет категории (0 выкл .. 3 высокий) задаёт игрок; жители выбирают сами.
+
+const BUILD := &"build"            # стройка (стадии)
+const FELL := &"fell"              # вырубка
+const DISMANTLE := &"dismantle"    # разбор руин
+const PRODUCTION := &"production"  # слот работника в производственном здании
+const CHORES := &"chores"          # повседневные дела (дрова)
+## Только для черт/профессий: ремонт в мастерской (приоритет — в PRODUCTION).
+const REPAIR := &"repair"
+
+const CATEGORIES: Array[StringName] = [BUILD, FELL, DISMANTLE, PRODUCTION, CHORES]
+const WORK_CATEGORIES: Array[StringName] = [BUILD, FELL, DISMANTLE, PRODUCTION, REPAIR, CHORES]
+const NAMES := {
+	BUILD: "Стройка", FELL: "Вырубка", DISMANTLE: "Разбор",
+	PRODUCTION: "Производство", CHORES: "Повседневные дела", REPAIR: "Ремонт",
+}
+
+const PRIORITY_MIN := 0
+const PRIORITY_MAX := 3
+const DEFAULT_PRIORITY := {BUILD: 2, FELL: 2, DISMANTLE: 2, PRODUCTION: 2, CHORES: 1}
+const PRIORITY_NAMES: Array[String] = ["выкл", "низкий", "средний", "высокий"]
+
+## --- Выбор задачи: score = приоритет*W + (множитель пригодности-1)*W - расстояние*W ---
+const PRIORITY_WEIGHT := 10.0
+const SUITABILITY_WEIGHT := 6.0
+const DISTANCE_WEIGHT := 0.04      # за метр
+const STICKY_BONUS := 3.0          # бонус текущей задаче (против дёрганья)
+const ASSIGN_INTERVAL := 1.0       # как часто житель пересматривает задачу, игр. с
+const JOB_CACHE_TICKS := 5         # возраст списка задач, тиков
+const BAN_TIME := 30.0             # сколько не ходить к недостижимой цели, игр. с
+
+## --- Скорость работы (работа/с жителя до модификаторов) ---
+const BASE_RATE := {
+	BUILD: BuildingDefs.BUILD_RATE, FELL: BuildingDefs.BUILD_RATE,
+	DISMANTLE: BuildingDefs.BUILD_RATE, PRODUCTION: Recipes.WORKER_RATE,
+	REPAIR: Recipes.WORKER_RATE, CHORES: 1.0,
+}
+## Профессия, подходящая задаче -> множитель скорости. Нет в таблице — 1.0.
+const PROFESSION_BONUS := {
+	BUILD: {&"builder": 1.5, &"carpenter": 1.25},
+	FELL: {&"carpenter": 1.5, &"hunter": 1.15},
+	DISMANTLE: {&"builder": 1.3, &"mechanic": 1.25},
+	REPAIR: {&"mechanic": 1.5},
+}
+## Производство: профессия, подходящая зданию (множитель PRODUCTION_MATCH_BONUS).
+const PRODUCTION_PROFESSION := {&"sawmill": &"carpenter", &"oil_press": &"farmer", &"workshop": &"mechanic"}
+const PRODUCTION_MATCH_BONUS := 1.5
+const MIN_RATE_MULT := 0.2         # пол суммарного множителя черт
+
+## --- Слоты: сколько жителей одновременно на объекте ---
+const BUILD_SLOTS := 3
+const FELL_SLOTS := 2
+const DISMANTLE_SLOTS := 2
+const PRODUCTION_SLOTS := 1
+const CHORE_SLOTS := 1
+
+## --- Повседневные дела: дрова ---
+const CHOP_WORK := 4.0                 # работа на колку одного бревна
+const FIREWOOD_PER_LOG := 2
+const CHORE_LOGS_RESERVE := 10         # бревна ниже этого запаса на дрова не идут
+const FIREWOOD_STORAGE_TARGET := 40    # колют, пока дров на складах меньше
+const CARRY_CAPACITY := 6              # дров за ходку
+const PICKUP_WORK := 1.5               # работа на погрузку у склада
+const DELIVER_WORK := 1.5              # работа на выгрузку в доме
+const ARRIVE_RADIUS_HUB := 5.0         # новичок «пришёл» на этом расстоянии от центра

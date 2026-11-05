@@ -31,6 +31,10 @@ var _queues: Dictionary = {}       # int workshop id -> Array[StringName]
 var _repairables: Dictionary = {}  # StringName -> Repairable
 var _saved_cond: Dictionary = {}   # StringName -> float (для ещё не зарегистрированных)
 var _sim: Simulation
+## true: рецепт/ремонт идут только пока у здания есть работник (add_work от жителя);
+## false (по умолчанию): плейсхолдер Recipes.WORKER_RATE.
+var external_work: bool = false
+var _ext_work: Dictionary = {}     # int building id -> работа за тик
 
 
 func _init(construction_in: ConstructionSystem, economy_in: EconomySystem) -> void:
@@ -74,6 +78,43 @@ func progress_fraction(id: int) -> float:
 		return 0.0
 	var d := _duration(s)
 	return 1.0 if d <= 0.0 else clampf(s["progress"] / d, 0.0, 1.0)
+
+
+## Нужен ли сейчас работник: цикл идёт, либо можно начать (хватает входов/запчастей).
+## Не нужен: пауза, ждёт склад/сырьё, цикл дошёл до конца.
+func needs_worker(id: int) -> bool:
+	var s := get_state(id)
+	if s.is_empty() or s["paused"]:
+		return false
+	if s["phase"] == RUNNING:
+		return s["progress"] < _duration(s)
+	var queue: Array = _queues.get(id, [])
+	if not queue.is_empty():
+		var r := get_repairable(queue[0])
+		if r != null and r.needs_repair() and economy.can_afford(r.get_repair_cost()):
+			return true
+	return economy.can_afford(Recipes.inputs(s["recipe"]))
+
+
+## &"repair" | &"recipe": что делает (или начнёт делать) работник здания.
+func active_job_kind(id: int) -> StringName:
+	var s := get_state(id)
+	if s.is_empty():
+		return &"recipe"
+	if s["phase"] == RUNNING:
+		return &"repair" if s["job"] == &"repair" else &"recipe"
+	var queue: Array = _queues.get(id, [])
+	if not queue.is_empty():
+		var r := get_repairable(queue[0])
+		if r != null and r.needs_repair() and economy.can_afford(r.get_repair_cost()):
+			return &"repair"
+	return &"recipe"
+
+
+## Работа жителя в здании (игровые секунды рецепта). Без external_work игнорируется.
+func add_work(id: int, amount: float) -> void:
+	if external_work and amount > 0.0:
+		_ext_work[id] = _ext_work.get(id, 0.0) + amount
 
 
 func available_recipes(id: int) -> Array[StringName]:
@@ -186,7 +227,8 @@ func tick(sim: Simulation, dt: float) -> void:
 	var work := dt * Recipes.WORKER_RATE
 	for b: Building in construction.buildings.values():
 		if b.is_done() and Recipes.is_production(b.type):
-			_tick_building(b, work)
+			_tick_building(b, _ext_work.get(b.id, 0.0) if external_work else work)
+	_ext_work.clear()
 
 
 func _state(b: Building) -> Dictionary:
@@ -207,6 +249,8 @@ func _tick_building(b: Building, work: float) -> void:
 	if s["paused"]:
 		return
 	if s["phase"] == IDLE:
+		if external_work and work <= 0.0:
+			return  # цикл начинает только присутствующий работник
 		_try_start(b, s)
 		return
 	if s["progress"] < _duration(s):

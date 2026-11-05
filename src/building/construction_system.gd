@@ -3,8 +3,11 @@ extends SimSystem
 ## Строительство со свободным размещением (позиция + любой угол поворота).
 ## Стадии: фундамент -> стены -> крыша -> готово. Цена стадии списывается из
 ## EconomySystem при её старте (нет ресурсов — стройка ждёт), затем стадия
-## идёт по работе: BUILD_RATE * build_speed_multiplier за секунду на стройку
-## (плейсхолдер: позже работу даст население).
+## идёт по работе. Источник работы:
+##  - external_work = false (по умолчанию, тесты без населения): плейсхолдер
+##    BUILD_RATE * build_speed_multiplier за секунду на стройку;
+##  - external_work = true (включает VillagerSystem): работа идёт ТОЛЬКО от жителей,
+##    физически стоящих на объекте (add_work); BUILD_RATE — базовая скорость одного жителя.
 ##
 ## Руины: каждая клетка WorldMap.Terrain.RUINS — объект-руина (id = индекс клетки).
 ## ИСТОЧНИК ИСТИНЫ по металлолому руин — Deposits (клетка RUINS = месторождение
@@ -31,6 +34,8 @@ var ruins: Dictionary = {}          # int ruin id -> {"id","cell":Vector2i,"pos"
 ## Хуки (сезоны/погода — позже). Не сохраняются: их выставляет внешняя система.
 var ground_frozen: bool = false     # блокирует СТАРТ стадии фундамента
 var build_speed_multiplier: float = 1.0
+## true: плейсхолдерная работа отключена, работу вносят жители через add_work().
+var external_work: bool = false
 
 var _consumed: Dictionary = {}      # int ruin id -> true (разобрана/восстановлена)
 var _jobs: Dictionary = {}          # int ruin id -> float прогресс разбора
@@ -38,6 +43,7 @@ var _fell: Dictionary = {}          # int индекс клетки леса -> 
 var _fell_blocked := false          # хотя бы одна вырубка ждёт места на складах
 var _next_id: int = 1
 var _sim: Simulation
+var _ext := {&"build": {}, &"fell": {}, &"dismantle": {}}  # вид -> {id: работа за тик}
 
 
 func _init(world_in: WorldMap, economy_in: EconomySystem) -> void:
@@ -352,6 +358,42 @@ func start_felling(cells: Array[Vector2i]) -> int:
 	return n
 
 
+## Индексы клеток с заданием вырубки (для планировщика жителей).
+func felling_indices() -> Array[int]:
+	var out: Array[int] = []
+	for i in _fell:
+		out.append(i)
+	out.sort()
+	return out
+
+
+func index_cell(idx: int) -> Vector2i:
+	return _idx_cell(idx)
+
+
+## Руины с идущим разбором, где ещё нужна работа (не ждут складов).
+func open_dismantles() -> Array[int]:
+	var out: Array[int] = []
+	for rid in _jobs:
+		if _jobs[rid] < BuildingDefs.DISMANTLE_WORK:
+			out.append(rid)
+	out.sort()
+	return out
+
+
+## Работа жителя на объекте. kind: &"build" (id здания), &"fell" (индекс клетки),
+## &"dismantle" (id руины). Учитывает build_speed_multiplier. Без external_work игнорируется.
+func add_work(kind: StringName, id: int, amount: float) -> void:
+	if not external_work or amount <= 0.0 or not _ext.has(kind):
+		return
+	var d: Dictionary = _ext[kind]
+	d[id] = d.get(id, 0.0) + amount * maxf(build_speed_multiplier, 0.0)
+
+
+func _work_for(kind: StringName, id: int, base: float) -> float:
+	return _ext[kind].get(id, 0.0) if external_work else base
+
+
 func is_felling(cell: Vector2i) -> bool:
 	return _fell.has(_cell_idx(cell))
 
@@ -369,12 +411,12 @@ func has_trees(cell: Vector2i) -> bool:
 	return economy.deposits.resource_at(cell) == &"logs" and economy.deposits.remaining(cell) > 0
 
 
-func _tick_felling(work: float) -> void:
+func _tick_felling(base_work: float) -> void:
 	_fell_blocked = false
 	var changed := false
 	for i in _fell.keys():
 		var cell := _idx_cell(i)
-		var p: float = _fell[i] + work
+		var p: float = _fell[i] + _work_for(&"fell", i, base_work)
 		while p >= BuildingDefs.FELL_WORK_PER_LOG and economy.deposits.remaining(cell) > 0:
 			if economy.total_free_space() < 1:
 				p = BuildingDefs.FELL_WORK_PER_LOG  # ждём места, прогресс не копится сверх одного бревна
@@ -401,12 +443,14 @@ func tick(sim: Simulation, dt: float) -> void:
 	var work := BuildingDefs.BUILD_RATE * maxf(build_speed_multiplier, 0.0) * dt
 	for b: Building in buildings.values():
 		if not b.is_done():
-			_advance(b, work)
+			_advance(b, _work_for(&"build", b.id, work))  # и при 0: оплата стадии/причина простоя
 	for rid in _jobs.keys():
-		_jobs[rid] = minf(_jobs[rid] + work, BuildingDefs.DISMANTLE_WORK)
+		_jobs[rid] = minf(_jobs[rid] + _work_for(&"dismantle", rid, work), BuildingDefs.DISMANTLE_WORK)
 		if _jobs[rid] >= BuildingDefs.DISMANTLE_WORK:
 			_try_finish_dismantle(rid)
 	_tick_felling(work)
+	for k in _ext:
+		(_ext[k] as Dictionary).clear()
 
 
 func _advance(b: Building, work: float) -> void:
