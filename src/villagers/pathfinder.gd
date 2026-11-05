@@ -5,7 +5,6 @@ extends RefCounted
 ## по паре (клетка старта, клетка цели). Карта статична (вода не меняется).
 
 const CACHE_MAX := 4096
-const LOS_STEP := 0.25   # шаг проверки луча, клеток
 
 var world: WorldMap
 var _grid: AStarGrid2D
@@ -102,14 +101,38 @@ func cache_size() -> int:
 	return _cache.size()
 
 
-## Прямая между центрами клеток не пересекает воду.
+## Прямая между центрами клеток не пересекает воду (обход клеток DDA; при прохождении
+## ровно через угол проверяются обе соседние клетки).
 func line_clear(a: Vector2i, b: Vector2i) -> bool:
-	var pa := Vector2(a.x + 0.5, a.y + 0.5)
-	var pb := Vector2(b.x + 0.5, b.y + 0.5)
-	var n := maxi(1, int(pa.distance_to(pb) / LOS_STEP))
-	for i in n + 1:
-		var q := pa.lerp(pb, float(i) / n)
-		if not is_walkable_cell(Vector2i(int(floorf(q.x)), int(floorf(q.y)))):
+	var dx := float(b.x - a.x)
+	var dy := float(b.y - a.y)
+	var cx := a.x
+	var cy := a.y
+	var sx := 1 if dx > 0.0 else -1
+	var sy := 1 if dy > 0.0 else -1
+	var tdx := INF if dx == 0.0 else absf(1.0 / dx)
+	var tdy := INF if dy == 0.0 else absf(1.0 / dy)
+	var tmx := INF if dx == 0.0 else 0.5 * tdx
+	var tmy := INF if dy == 0.0 else 0.5 * tdy
+	if not is_walkable_cell(a):
+		return false
+	var guard := absi(b.x - a.x) + absi(b.y - a.y) + 2
+	while (cx != b.x or cy != b.y) and guard > 0:
+		guard -= 1
+		if absf(tmx - tmy) < 0.000001:
+			if not is_walkable_cell(Vector2i(cx + sx, cy)) or not is_walkable_cell(Vector2i(cx, cy + sy)):
+				return false
+			cx += sx
+			cy += sy
+			tmx += tdx
+			tmy += tdy
+		elif tmx < tmy:
+			cx += sx
+			tmx += tdx
+		else:
+			cy += sy
+			tmy += tdy
+		if not is_walkable_cell(Vector2i(cx, cy)):
 			return false
 	return true
 

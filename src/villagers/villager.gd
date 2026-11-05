@@ -123,4 +123,14 @@ static func from_dict(d: Dictionary) -> Villager:
 					v.task[String(k)] = SaveManager.to_int(val, 0)
 				"work":
 					v.task[String(k)] = float(val)
+	# Нормализация: битая задача (нет вида/ключа) снимается.
+	if not v.task.has("kind") or not v.task.has("key"):
+		v.task = {}
+	else:
+		v.task["cat"] = v.task.get("cat", &"")
+		v.task["target"] = v.task.get("target", 0)
+		v.task["phase"] = v.task.get("phase", &"")
+		v.task["work"] = v.task.get("work", 0.0)
+		v.task["carry"] = v.task.get("carry", 0)
+		v.task["src"] = v.task.get("src", 0)
 	return v
