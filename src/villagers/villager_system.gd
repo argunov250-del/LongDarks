@@ -36,6 +36,7 @@ var building_priorities: Dictionary = {} # int id здания -> int 0..3 (пе
 var weather: WeatherSystem                # погода: пожар, паводок (шаг 14), null — нет
 var household: HouseholdSystem          # запасы домов и столовых, огороды, сараи (шаг 10b)
 var food: FoodSystem                    # поля, теплицы, охота, рыбалка, грибы (шаг 16), null — нет
+var vehicles: VehicleSystem               # step 18: vehicles, roads, footpaths; null — none
 var needs: NeedsSystem                  # потребности, расселение, болезни (шаг 11)
 ## Потребности и ночной сон включены (тесты старых шагов отключают).
 var needs_enabled: bool = true:
@@ -428,6 +429,22 @@ func _build_jobs() -> void:
 	_build_food_jobs(outdoor_ok)
 	_build_chore_jobs()
 	_build_treat_jobs()
+	_build_vehicle_jobs(outdoor_ok)
+
+
+## Step 18: driving jobs and road building (design/gdd/vehicles.md).
+func _build_vehicle_jobs(outdoor_ok: bool) -> void:
+	if vehicles == null or not outdoor_ok:
+		return
+	var dp := priority_of(TaskDefs.DRIVE)
+	if dp > 0:
+		for j in vehicles.jobs():
+			_job(j["key"], TaskDefs.DRIVE, &"drive", j["target"], j["pos"], 1, dp, TaskDefs.DRIVE)
+			_job_by_key[j["key"]]["only"] = j["only"]
+	var bp := priority_of(TaskDefs.BUILD)
+	if bp > 0:
+		for j in vehicles.road_jobs():
+			_job(j["key"], TaskDefs.BUILD, &"road", j["target"], j["pos"], TaskDefs.BUILD_SLOTS, bp, TaskDefs.BUILD)
 
 
 ## Step 16 (design/gdd/food.md): fields, hunting, fishing, gathering, greenhouse jobs from FoodSystem.
@@ -436,7 +453,7 @@ func _build_food_jobs(outdoor_ok: bool) -> void:
 		return
 	for j in food.jobs():
 		var p := priority_of(j["cat"])
-		if p > 0:
+		if p > 0 and not (vehicles != null and vehicles.is_reserved(j["key"])):
 			_job(j["key"], j["cat"], j["kind"], j["target"], j["pos"], TaskDefs.FOOD_SLOTS, p, j["tcat"])
 
 
@@ -542,6 +559,10 @@ func _pick(v: Villager, use_claims: bool) -> Dictionary:
 			continue
 		if job["kind"] == &"treat" and not needs.can_treat(v):
 			continue
+		if job["kind"] == &"drive":
+			var only: int = job.get("only", 0)
+			if (only != 0 and only != v.id) or not vehicles.can_drive(v, vehicles.get_vehicle(job["target"])):
+				continue
 		if use_claims and _claims.get(key, 0) - (1 if key == cur else 0) >= job["cap"]:
 			continue
 		var s := _score(v, job) + (TaskDefs.STICKY_BONUS if key == cur else 0.0)
@@ -645,6 +666,11 @@ func _task_pos(v: Villager, t: Dictionary) -> Variant:
 			return world.cell_center(c.x, c.y)
 		&"dismantle":
 			return construction.ruins[t["target"]]["pos"] if construction.ruins.has(t["target"]) else null
+		&"road":
+			return world.cell_center(t["target"] % world.size, t["target"] / world.size)
+		&"drive":
+			var dv := vehicles.get_vehicle(t["target"]) if vehicles != null else null
+			return dv.pos if dv != null else null
 		&"chop", &"carry", &"water", &"food", &"garden", &"stoke", &"extinguish":
 			return _haul_pos(t)
 		&"field", &"hunt", &"fish", &"forage", &"gpick", &"plant", &"heal_land":
@@ -672,8 +698,10 @@ func _task_radius(t: Dictionary) -> float:
 		&"build", &"produce", &"mend":
 			var b := construction.get_building(t["target"])
 			return _building_radius(b) if b != null else 1.0
-		&"fell", &"dismantle":
+		&"fell", &"dismantle", &"road":
 			return 1.7
+		&"drive":
+			return 2.5
 		&"chop", &"carry", &"water", &"food", &"garden", &"stoke", &"extinguish":
 			return _haul_radius(t)
 		&"field", &"hunt", &"fish", &"forage", &"gpick", &"plant", &"heal_land":
@@ -810,10 +838,12 @@ func _haul_radius(t: Dictionary) -> float:
 
 ## Задача уже взяла груз/дошла до дела: не пересматривается, пока не доставит.
 func _committed(t: Dictionary) -> bool:
-	return t.get("kind", &"") == &"arrive" or t.get("phase", &"") == &"deliver"
+	return t.get("kind", &"") == &"arrive" or (t.get("kind", &"") == &"drive" and t.get("phase", &"") == &"driving") or t.get("phase", &"") == &"deliver"
 
 
 func _alive(t: Dictionary) -> bool:
+	if t["kind"] == &"drive":
+		return vehicles != null and vehicles.is_drivable(vehicles.get_vehicle(t["target"]))
 	if t["kind"] == &"arrive":
 		return true
 	if t["kind"] == &"extinguish":
@@ -868,18 +898,44 @@ func _tick_villager(v: Villager, dt: float) -> void:
 	if not _alive(t):
 		_abandon(v)
 		return
+	if t["kind"] == &"drive" and t.get("phase", &"") == &"driving":
+		_tick_driver(v, t, dt)
+		return
 	var goal = _task_pos(v, t)
 	if goal == null:
 		_abandon(v)
 		return
-	var res := _go_to(v, goal, _task_radius(t), VillagerDefs.WALK_SPEED * walk_speed_multiplier, dt)
+	var fm := vehicles.walk_mult_at(v.pos) if vehicles != null else 1.0
+	var res := _go_to(v, goal, _task_radius(t), VillagerDefs.WALK_SPEED * walk_speed_multiplier * fm, dt)
+	if vehicles != null and v.moving:
+		vehicles.note_walk(v.id, v.pos)
 	if res == Go.BLOCKED:
 		v.banned[t["key"]] = _time + TaskDefs.BAN_TIME
 		_abandon(v)
 		return
 	v.at_site = res == Go.ARRIVED
+	if v.at_site and t["kind"] == &"drive":
+		var dveh := vehicles.get_vehicle(t["target"])
+		if vehicles.board(v, dveh):
+			t["phase"] = &"driving"
+		else:
+			v.banned[t["key"]] = _time + TaskDefs.BAN_TIME
+			_abandon(v)
+		return
 	if v.at_site:
 		_work(v, t, dt)
+
+
+## Step 18: the villager drives the vehicle (VehicleSystem moves both).
+func _tick_driver(v: Villager, t: Dictionary, dt: float) -> void:
+	var r := vehicles.drive_tick(v, t, dt)
+	v.at_site = true
+	if r == VehicleSystem.Res.ONGOING:
+		return
+	if r == VehicleSystem.Res.FAILED:
+		v.banned[t["key"]] = _time + TaskDefs.BAN_TIME
+	_jobs_dirty = true
+	_abandon(v)
 
 
 ## Несомое возвращается на склад (вода выливается).
@@ -891,6 +947,10 @@ func _drop_load(v: Villager) -> void:
 
 
 func _abandon(v: Villager) -> void:
+	if v.task.get("kind", &"") == &"drive" and vehicles != null:
+		var dv := vehicles.get_vehicle(int(v.task["target"]))
+		if dv != null and dv.driver_id == v.id:
+			vehicles.release(dv)
 	_drop_load(v)
 	v.task = {}
 	v.think_cd = 0.0
@@ -939,7 +999,10 @@ func _work(v: Villager, t: Dictionary, dt: float) -> void:
 			v.task = {}
 			v.think_cd = 0.0
 		&"build":
-			construction.add_work(&"build", t["target"], work_rate(v, TaskDefs.BUILD) * dt)
+			construction.add_work(&"build", t["target"], work_rate(v, TaskDefs.BUILD) * dt * _site_mult(&"build", t["target"]))
+			train(v, TaskDefs.BUILD, dt)
+		&"road":
+			vehicles.add_road_work(t["target"], work_rate(v, TaskDefs.BUILD) * dt * _site_mult(&"road", t["target"]))
 			train(v, TaskDefs.BUILD, dt)
 		&"mend":
 			construction.add_work(&"repair", t["target"], work_rate(v, TaskDefs.BUILD) * dt)
@@ -948,7 +1011,7 @@ func _work(v: Villager, t: Dictionary, dt: float) -> void:
 			construction.add_work(&"fell", t["target"], work_rate(v, TaskDefs.FELL) * dt)
 			train(v, TaskDefs.FELL, dt)
 		&"dismantle":
-			construction.add_work(&"dismantle", t["target"], work_rate(v, TaskDefs.DISMANTLE) * dt)
+			construction.add_work(&"dismantle", t["target"], work_rate(v, TaskDefs.DISMANTLE) * dt * _site_mult(&"dismantle", t["target"]))
 			train(v, TaskDefs.DISMANTLE, dt)
 		&"produce":
 			var b := construction.get_building(t["target"])
@@ -1177,6 +1240,11 @@ func _finish_delivery(v: Villager, t: Dictionary) -> void:
 
 # ---------- описание ----------
 
+## Machine multiplier at a site (excavator/bulldozer/crane), 1.0 without vehicles.
+func _site_mult(skind: StringName, target: int) -> float:
+	return vehicles.site_multiplier(skind, target) if vehicles != null else 1.0
+
+
 func task_text(v: Villager) -> String:
 	var t := v.task
 	if t.is_empty():
@@ -1188,6 +1256,11 @@ func task_text(v: Villager) -> String:
 		&"build":
 			var b := construction.get_building(t["target"])
 			txt = "Стройка: " + (BuildingDefs.display_name(b.type) if b != null else "?")
+		&"drive":
+			var tv := vehicles.get_vehicle(t["target"]) if vehicles != null else null
+			txt = "Вождение: " + (tv.display_name if tv != null else "?")
+		&"road":
+			txt = "Строит дорогу"
 		&"fell":
 			txt = "Вырубка леса"
 		&"dismantle":
