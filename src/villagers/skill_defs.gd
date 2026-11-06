@@ -29,12 +29,12 @@ const MIN_LEARN_MULT := 0.3
 const PROFESSION_START := {
 	&"mechanic": {TaskDefs.REPAIR: 0.5, TaskDefs.PRODUCTION: 0.35, TaskDefs.DISMANTLE: 0.3},
 	&"doctor": {TaskDefs.CHORES: 0.25},
-	&"farmer": {TaskDefs.PRODUCTION: 0.3, TaskDefs.CHORES: 0.3},
+	&"farmer": {TaskDefs.PRODUCTION: 0.3, TaskDefs.CHORES: 0.3, TaskDefs.FIELD: 0.4, TaskDefs.GREENHOUSE: 0.4},
 	&"driver": {TaskDefs.CHORES: 0.25, TaskDefs.DISMANTLE: 0.2},
 	&"builder": {TaskDefs.BUILD: 0.5, TaskDefs.DISMANTLE: 0.4},
 	&"carpenter": {TaskDefs.FELL: 0.5, TaskDefs.BUILD: 0.35, TaskDefs.PRODUCTION: 0.3},
-	&"hunter": {TaskDefs.FELL: 0.3, TaskDefs.CHORES: 0.2},
-	&"fisher": {TaskDefs.CHORES: 0.3},
+	&"hunter": {TaskDefs.FELL: 0.3, TaskDefs.CHORES: 0.2, TaskDefs.HUNT: 0.4},
+	&"fisher": {TaskDefs.CHORES: 0.3, TaskDefs.FISH: 0.4},
 	&"cook": {TaskDefs.CHORES: 0.4, TaskDefs.PRODUCTION: 0.2},
 }
 

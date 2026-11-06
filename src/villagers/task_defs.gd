@@ -10,17 +10,25 @@ const PRODUCTION := &"production"  # слот работника в произв
 const CHORES := &"chores"          # повседневные дела (дрова)
 ## Только для черт/профессий: ремонт в мастерской (приоритет — в PRODUCTION).
 const REPAIR := &"repair"
+## Step 16 (food): field work, hunting, fishing, gathering, greenhouse.
+const FIELD := &"field"
+const HUNT := &"hunt"
+const FISH := &"fish"
+const FORAGE := &"forage"
+const GREENHOUSE := &"greenhouse"
 
-const CATEGORIES: Array[StringName] = [BUILD, FELL, DISMANTLE, PRODUCTION, CHORES]
-const WORK_CATEGORIES: Array[StringName] = [BUILD, FELL, DISMANTLE, PRODUCTION, REPAIR, CHORES]
+const CATEGORIES: Array[StringName] = [BUILD, FELL, DISMANTLE, PRODUCTION, CHORES, FIELD, HUNT, FISH, FORAGE, GREENHOUSE]
+const WORK_CATEGORIES: Array[StringName] = [BUILD, FELL, DISMANTLE, PRODUCTION, REPAIR, CHORES, FIELD, HUNT, FISH, FORAGE, GREENHOUSE]
 const NAMES := {
 	BUILD: "Стройка", FELL: "Вырубка", DISMANTLE: "Разбор",
 	PRODUCTION: "Производство", CHORES: "Повседневные дела", REPAIR: "Ремонт",
+	FIELD: "Поле", HUNT: "Охота", FISH: "Рыбалка", FORAGE: "Сбор", GREENHOUSE: "Теплица",
 }
 
 const PRIORITY_MIN := 0
 const PRIORITY_MAX := 3
-const DEFAULT_PRIORITY := {BUILD: 2, FELL: 2, DISMANTLE: 2, PRODUCTION: 2, CHORES: 1}
+const DEFAULT_PRIORITY := {BUILD: 2, FELL: 2, DISMANTLE: 2, PRODUCTION: 2, CHORES: 1,
+	FIELD: 2, HUNT: 1, FISH: 1, FORAGE: 1, GREENHOUSE: 2}
 const PRIORITY_NAMES: Array[String] = ["выкл", "низкий", "средний", "высокий"]
 
 ## --- Выбор задачи: score = приоритет*W + (множитель пригодности-1)*W - расстояние*W ---
@@ -37,6 +45,7 @@ const BASE_RATE := {
 	BUILD: BuildingDefs.BUILD_RATE, FELL: BuildingDefs.BUILD_RATE,
 	DISMANTLE: BuildingDefs.BUILD_RATE, PRODUCTION: Recipes.WORKER_RATE,
 	REPAIR: Recipes.WORKER_RATE, CHORES: 1.0,
+	FIELD: 1.0, HUNT: 1.0, FISH: 1.0, FORAGE: 1.0, GREENHOUSE: 1.0,
 }
 ## Профессия, подходящая задаче -> множитель скорости. Нет в таблице — 1.0.
 const PROFESSION_BONUS := {
@@ -44,6 +53,8 @@ const PROFESSION_BONUS := {
 	FELL: {&"carpenter": 1.5, &"hunter": 1.15},
 	DISMANTLE: {&"builder": 1.3, &"mechanic": 1.25},
 	REPAIR: {&"mechanic": 1.5},
+	FIELD: {&"farmer": 1.5}, GREENHOUSE: {&"farmer": 1.5},
+	HUNT: {&"hunter": 1.5}, FISH: {&"fisher": 1.5},
 }
 ## Производство: профессия, подходящая зданию (множитель PRODUCTION_MATCH_BONUS).
 const PRODUCTION_PROFESSION := {&"sawmill": &"carpenter", &"oil_press": &"farmer", &"workshop": &"mechanic"}
@@ -56,6 +67,7 @@ const FELL_SLOTS := 2
 const DISMANTLE_SLOTS := 2
 const PRODUCTION_SLOTS := 1
 const CHORE_SLOTS := 1
+const FOOD_SLOTS := 1                  # one villager per field cell / herd / fishing spot / greenhouse job
 
 ## --- Повседневные дела: дрова ---
 const CHOP_WORK := 4.0                 # работа на колку одного бревна (у колоды во дворе)

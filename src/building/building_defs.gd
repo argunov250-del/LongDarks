@@ -39,6 +39,7 @@ const _DEFS := {
 	&"warehouse": ["Склад", Tab.PRODUCTION, Vector2(6, 5), [{&"logs": 3, &"stone": 2}, {&"planks": 8}, {&"planks": 6}], [10.0, 16.0, 10.0], &"", 2.2, {"storage": WAREHOUSE_CAPACITY}],
 	&"cellar": ["Погреб", Tab.PRODUCTION, Vector2(4, 3), [{&"stone": 6}, {&"stone": 6, &"logs": 2}, {&"logs": 3}], [10.0, 12.0, 6.0], &"", 1.0, {"storage": CELLAR_CAPACITY, "cellar": true}],
 	&"well": ["Колодец", Tab.PRODUCTION, Vector2(1.8, 1.8), [{&"stone": 3}, {&"stone": 4, &"logs": 1}, {&"planks": 2}], [6.0, 8.0, 4.0], &"", 1.0, {"well": true}],
+	&"greenhouse": ["Теплица", Tab.PRODUCTION, Vector2(5, 4), [{&"stone": 2, &"logs": 2}, {&"planks": 4, &"logs": 2}, {&"planks": 2, &"scrap_metal": 4}], [8.0, 12.0, 10.0], &"", 1.8, {"greenhouse": true}],
 	# социальные
 	&"hospital": ["Больница", Tab.SOCIAL, Vector2(7, 5), [{&"stone": 6}, {&"planks": 10, &"stone": 8}, {&"planks": 8, &"spare_parts": 3}], [16.0, 28.0, 18.0], &"", 2.6, {}],
 	&"school": ["Школа", Tab.SOCIAL, Vector2(6, 5), [{&"stone": 4}, {&"planks": 8, &"logs": 4}, {&"planks": 6}], [14.0, 22.0, 14.0], &"", 2.4, {}],
@@ -161,6 +162,10 @@ static func stove_capacity(id: StringName) -> int:
 
 static func is_well(id: StringName) -> bool:
 	return _DEFS.has(id) and _DEFS[id][7].get("well", false)
+
+
+static func is_greenhouse(id: StringName) -> bool:
+	return _DEFS.has(id) and _DEFS[id][7].get("greenhouse", false)
 
 
 static func is_barn(id: StringName) -> bool:
