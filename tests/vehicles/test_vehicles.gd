@@ -268,3 +268,18 @@ func test_save_load_mid_trip() -> void:
 	assert_eq(v2.cargo_n, 0, "trip finished after load")
 	assert_true(q.e.eco.storages[1].used() > 0, "cargo arrived after load")
 	assert_true(s2 != null)
+
+
+func test_view_meshes_and_three_layers() -> void:
+	var r := VehEnv.new()
+	for t in VehicleDefs.TYPES:
+		assert_true(VehiclesView.build_mesh(t).get_child_count() >= 4, "mesh " + String(t))
+		assert_true(VehicleDefs.MODEL_NAMES.has(t))
+	var view := VehiclesView.new()
+	view.setup(r.vh, r.e.world, r.e.sim)
+	r.vh.trails.add_foot(r.vh.cell_idx(r.spot(0)), 12.0)
+	r.vh.trails.add_rut(r.vh.cell_idx(r.spot(1)), 8.0)
+	r.vh.trails.build_road(r.vh.cell_idx(r.spot(2)))
+	view.rebuild_trails()
+	assert_eq(view.layer_counts, {"foot": 1, "ruts": 1, "roads": 1}, "three separate layers drawn")
+	view.free()

@@ -13,6 +13,8 @@ var food: FoodSystem
 var food_view: FoodView
 var restoration: RestorationSystem
 var restoration_view: RestorationView
+var vehicles: VehicleSystem
+var vehicles_view: VehiclesView
 var season_visuals: SeasonVisuals
 var world_view: WorldView
 var economy: EconomySystem
@@ -63,6 +65,11 @@ func _ready() -> void:
 	restoration.attach(SimRunner.sim)
 	villagers.household.restoration = restoration
 	restoration.bind(economy, world_map, construction, food, climate, seasons)
+	vehicles = VehicleSystem.new()
+	SimRunner.sim.register_system(vehicles)
+	vehicles.attach(SimRunner.sim)
+	vehicles.bind(world_map, economy, construction, production, villagers, food, seasons, weather)
+	vehicles.populate_start()
 	world_view = WorldView.new()
 	world_view.name = "World"
 	add_child(world_view)
@@ -101,6 +108,10 @@ func _ready() -> void:
 	restoration_view.name = "RestorationView"
 	add_child(restoration_view)
 	restoration_view.setup(restoration, world_map, economy.deposits, world_view, SimRunner.sim)
+	vehicles_view = VehiclesView.new()
+	vehicles_view.name = "VehiclesView"
+	add_child(vehicles_view)
+	vehicles_view.setup(vehicles, world_map, SimRunner.sim)
 	var rig: CameraRig = $CameraRig
 	rig.setup(world_map, $CameraRig/Camera3D)
 	SimRunner.sim.register_system(rig.save_system)
@@ -113,4 +124,5 @@ func _ready() -> void:
 	build_controller.villagers_view = villagers_view
 	build_controller.food = food
 	build_controller.restoration = restoration
+	build_controller.vehicles = vehicles
 	print("LongDarks: main scene ready, world %dx%d, terrain verts %d" % [world_map.size, world_map.size, world_view.terrain_vertex_count])

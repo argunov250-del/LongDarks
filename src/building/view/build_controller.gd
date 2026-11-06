@@ -46,6 +46,9 @@ var restore_menu := false
 var felling_mode := false
 var field_mode := false          # кисть полей (шаг 16): тот же режим кисти, цель — разметка поля
 var plant_mode := false          # шаг 17: кисть «Посадить лес»
+var road_mode := false           # шаг 18: кисть «Дорога»
+var vehicles: VehicleSystem
+var selected_vehicle := -1
 var heal_mode := false           # шаг 17: кисть «Лечить землю»
 var restoration: RestorationSystem
 var field_crop: StringName = &"grain"
@@ -80,6 +83,7 @@ func setup(construction: ConstructionSystem, cam: Camera3D, hud_in: Hud, view: W
 	hud.field_requested.connect(start_field_mode)
 	hud.plant_requested.connect(start_plant_mode)
 	hud.heal_requested.connect(start_heal_mode)
+	hud.road_requested.connect(start_road_mode)
 	hud.villager_card_requested.connect(select_villager)
 	sim.bus.subscribe(ConstructionSystem.TOPIC_CHANGED, _on_changed)
 	_on_changed({})
@@ -234,6 +238,14 @@ func start_plant_mode() -> void:
 	_update_brush()
 
 
+func start_road_mode() -> void:
+	if vehicles == null:
+		return
+	start_felling_mode()
+	road_mode = true
+	_update_brush()
+
+
 func start_heal_mode() -> void:
 	if restoration == null:
 		return
@@ -255,6 +267,7 @@ func cancel_felling_mode() -> void:
 	field_mode = false
 	plant_mode = false
 	heal_mode = false
+	road_mode = false
 	brush_cells = []
 	if _brush != null:
 		_brush.queue_free()
@@ -278,7 +291,9 @@ func confirm_felling() -> int:
 		return 0
 	_update_brush()
 	var n := 0
-	if plant_mode:
+	if road_mode:
+		n = vehicles.designate_road(brush_cells)
+	elif plant_mode:
 		n = restoration.designate_plant(brush_cells)
 	elif heal_mode:
 		n = restoration.designate_heal(brush_cells)
@@ -294,7 +309,9 @@ func _update_brush() -> void:
 	var hit = pick_ground()
 	if hit != null:
 		brush_pos = hit
-	if plant_mode:
+	if road_mode:
+		brush_cells = vehicles.road_cells_in_brush(brush_pos, brush_radius, brush_circle)
+	elif plant_mode:
 		brush_cells = restoration.plant_cells_in_brush(brush_pos, brush_radius, brush_circle)
 	elif heal_mode:
 		brush_cells = restoration.heal_cells_in_brush(brush_pos, brush_radius, brush_circle)
@@ -321,6 +338,14 @@ func _update_brush() -> void:
 		_brush_drawn = brush_radius
 		_brush_circle_drawn = brush_circle
 	_brush.position = Vector3(brush_pos.x, con.ground_height(brush_pos) + 0.2, brush_pos.z)
+	if road_mode:
+		hud.show_actions("Дорога: %s, радиус %d м\nКлеток: %d (1 камень и работа строителя на клетку)" % ["круг" if brush_circle else "квадрат", roundi(brush_radius), brush_cells.size()], [
+			[&"fell_shape", "Круг" if not brush_circle else "Квадрат", true],
+			[&"fell_minus", "−", brush_radius > BRUSH_MIN],
+			[&"fell_plus", "+", brush_radius < BRUSH_MAX],
+			[&"fell_confirm", "Проложить", not brush_cells.is_empty()],
+			[&"fell_cancel", "Отмена", true]])
+		return
 	if plant_mode or heal_mode:
 		hud.show_actions("%s: %s, радиус %d м\nКлеток: %d" % [
 				"Посадка леса" if plant_mode else "Лечение земли", "круг" if brush_circle else "квадрат", roundi(brush_radius), brush_cells.size()], [
@@ -355,6 +380,7 @@ func clear_selection() -> void:
 	selected_building = -1
 	selected_ruin = -1
 	selected_villager = -1
+	selected_vehicle = -1
 	if villagers_view != null:
 		villagers_view.set_selected(-1)
 	restore_menu = false
@@ -401,6 +427,11 @@ func select_at(p: Vector3) -> void:
 		if v != null:
 			select_villager(v.id)
 			return
+	if vehicles != null:
+		var nv := vehicles.vehicle_near(p, 5.0)
+		if nv != null:
+			select_vehicle(nv.id)
+			return
 	var b := con.building_at(p)
 	if b != null:
 		select_building(b.id)
@@ -416,6 +447,33 @@ func select_at(p: Vector3) -> void:
 		hud.show_actions(food.field_text(map.cell_of(p.x, p.z)), [[&"close", "Закрыть", true]])
 	else:
 		clear_selection()
+
+
+## Vehicle panel (step 18): name, type, condition, fuel, driver, cargo; assign driver / queue repair.
+func select_vehicle(id: int) -> void:
+	clear_selection()
+	selected_vehicle = id
+	_show_info()
+
+
+func vehicle_card_text(v: Vehicle) -> String:
+	var drv := "нет"
+	var dv := villagers.get_villager(v.driver_id) if v.driver_id != 0 else null
+	if dv != null:
+		drv = dv.display_name
+	elif v.assigned_driver != 0 and villagers.get_villager(v.assigned_driver) != null:
+		drv = villagers.get_villager(v.assigned_driver).display_name + " (назначен)"
+	var cargo := "пусто" if v.cargo_n <= 0 else "%s x%d" % [ResourceDefs.display_name(v.cargo_res), v.cargo_n]
+	return "%s\nТип: %s. %s\nСостояние: %d%%  Топливо: %d/%d л\nВодитель: %s\nГруз: %s" % [v.display_name, VehicleDefs.type_name(v.type), vehicles.status_text(v), roundi(v.condition * 100.0), roundi(v.fuel), roundi(v.tank()), drv, cargo]
+
+
+func _cycle_driver(v: Vehicle) -> void:
+	var cands: Array[int] = [0]
+	for vil in villagers.villager_list():
+		if vil.profession == &"driver":
+			cands.append(vil.id)
+	var i := cands.find(v.assigned_driver)
+	vehicles.assign_driver(v.id, cands[(i + 1) % cands.size()])
 
 
 func villager_card_text(v: Villager) -> String:
@@ -439,6 +497,13 @@ func _home_name(v: Villager) -> String:
 
 
 func _show_info() -> void:
+	if selected_vehicle >= 0 and vehicles != null:
+		var sv := vehicles.get_vehicle(selected_vehicle)
+		if sv == null:
+			clear_selection()
+			return
+		hud.show_actions(vehicle_card_text(sv), [[&"veh_driver", "Водитель", true], [&"veh_repair", "В ремонт", sv.needs_repair()], [&"close", "Закрыть", true]])
+		return
 	if selected_villager >= 0:
 		var v := villagers.get_villager(selected_villager) if villagers != null else null
 		if v == null:
@@ -605,6 +670,18 @@ func production_text(id: int) -> String:
 ## Обработчик кнопок панели действий.
 func on_action(id: StringName) -> void:
 	match id:
+		&"veh_driver":
+			if vehicles != null and selected_vehicle >= 0:
+				_cycle_driver(vehicles.get_vehicle(selected_vehicle))
+			_show_info()
+		&"veh_repair":
+			if vehicles != null and production != null and selected_vehicle >= 0:
+				for bid in con.buildings:
+					var wb: Building = con.buildings[bid]
+					if wb.type == &"workshop" and wb.is_done():
+						production.queue_repair(bid, vehicles.get_vehicle(selected_vehicle).repair_id)
+						break
+			_show_info()
 		&"fell_shape":
 			toggle_brush_shape()
 		&"field_crop":

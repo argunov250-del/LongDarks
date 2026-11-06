@@ -9,6 +9,7 @@ extends Control
 signal build_selected(type_id: StringName)   # выбрано здание во вкладке строительства
 signal field_requested                        # «Поле» (шаг 16): кисть полей с выбором культуры
 signal plant_requested                        # «Посадить лес» (шаг 17)
+signal road_requested                         # «Дорога» (шаг 18)
 signal heal_requested                         # «Лечить землю» (шаг 17)
 signal fell_requested                         # кнопка «Вырубка» во вкладках строительства
 signal action_pressed(id: StringName)         # кнопка панели действий (размещение/здание/руина)
@@ -30,6 +31,7 @@ var tab_buttons: Array[Button] = []
 var field_button: Button
 var plant_button: Button
 var heal_button: Button
+var road_button: Button
 var fell_button: Button      # режим вырубки леса (рядом с вкладками)
 var menu_button: Button      # ландшафт: кнопка меню в верхней панели
 var fab: Button              # портрет: плавающая кнопка
@@ -299,6 +301,10 @@ func _build() -> void:
 	heal_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	heal_button.pressed.connect(func(): heal_requested.emit())
 	_tabs_row.add_child(heal_button)
+	road_button = _mk_button("Дорога")
+	road_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	road_button.pressed.connect(func(): road_requested.emit())
+	_tabs_row.add_child(road_button)
 	_tab_panel = PanelContainer.new()
 	_tab_title = Label.new()
 	_tab_title.mouse_filter = Control.MOUSE_FILTER_IGNORE

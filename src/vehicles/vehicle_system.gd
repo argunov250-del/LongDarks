@@ -393,6 +393,17 @@ func jobs() -> Array[Dictionary]:
 	return out
 
 
+func vehicle_near(p: Vector3, radius: float) -> Vehicle:
+	var best: Vehicle = null
+	var bd := radius
+	for v: Vehicle in vehicles.values():
+		var d := Vector2(v.pos.x - p.x, v.pos.z - p.z).length()
+		if d <= bd:
+			bd = d
+			best = v
+	return best
+
+
 func board(vil: Villager, v: Vehicle) -> bool:
 	if v.driver_id != 0 and v.driver_id != vil.id:
 		return false
