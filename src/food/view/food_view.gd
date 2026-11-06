@@ -70,12 +70,12 @@ func rebuild_fields() -> void:
 	var cs := world.cell_size
 	for i in food.fields:
 		var f: Dictionary = food.fields[i]
-		var c := Vector3(i % world.size, 0.0, i / world.size)
+		var c := world.cell_center(i % world.size, i / world.size)
 		var col := field_color(f)
 		var base := verts.size()
 		for k in 4:
-			var x := (c.x + (k & 1)) * cs
-			var z := (c.z + (k >> 1)) * cs
+			var x := c.x + ((k & 1) - 0.5) * cs
+			var z := c.z + ((k >> 1) - 0.5) * cs
 			verts.append(Vector3(x, world.height_at(x, z) + FIELD_LIFT, z))
 			norms.append(Vector3.UP)
 			cols.append(col)
