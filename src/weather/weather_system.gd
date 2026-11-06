@@ -58,6 +58,11 @@ func bind(seasons_in: SeasonSystem, construction_in: ConstructionSystem, village
 	apply_hooks()
 
 
+## Шина событий симуляции (визуал подписывается на молнии), null — без симуляции.
+func bus() -> EventBus:
+	return _sim.bus if _sim != null else null
+
+
 func set_frequency_multiplier(x: float) -> void:
 	frequency_multiplier = maxf(0.0, x)
 

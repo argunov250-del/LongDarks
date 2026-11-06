@@ -54,6 +54,24 @@ void fragment() {
 
 var terrain_material: ShaderMaterial
 var _tree_mat: StandardMaterial3D
+var _tree_sm: ShaderMaterial        # деревья качаются на ветру (uniform sway, шаг 14)
+const TREE_SHADER := """
+shader_type spatial;
+uniform vec3 albedo = vec3(0.2, 0.3, 0.2);
+uniform float sway = 0.0;
+void vertex() {
+	vec3 wp = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	float h = max(VERTEX.y + 1.5, 0.0);
+	float ph = wp.x * 0.3 + wp.z * 0.23;
+	float s = sin(TIME * 2.5 + ph) + 0.5 * sin(TIME * 5.3 + ph * 1.7);
+	VERTEX.x += s * sway * h * 0.35;
+	VERTEX.z += cos(TIME * 2.1 + ph) * sway * h * 0.2;
+}
+void fragment() {
+	ALBEDO = albedo;
+	ROUGHNESS = 1.0;
+}
+"""
 const TREE_COLOR := Color(0.18, 0.28, 0.20)
 
 
@@ -128,6 +146,14 @@ func apply_season(snow: float, grass_tint: Color, grass_amount: float) -> void:
 		var tint := Color.WHITE.lerp(grass_tint, grass_amount * 0.5)
 		var c := TREE_COLOR.lerp(SNOW, 0.35 * snow)
 		_tree_mat.albedo_color = Color(c.r * tint.r, c.g * tint.g, c.b * tint.b)
+		if _tree_sm != null:
+			_tree_sm.set_shader_parameter("albedo", Vector3(_tree_mat.albedo_color.r, _tree_mat.albedo_color.g, _tree_mat.albedo_color.b))
+
+
+## Ветер: амплитуда качания деревьев (0 — штиль). WeatherVisuals зовёт при ветреных событиях.
+func set_tree_sway(amount: float) -> void:
+	if _tree_sm != null:
+		_tree_sm.set_shader_parameter("sway", amount)
 
 
 func _build_water() -> void:
@@ -217,6 +243,12 @@ func _build_props() -> void:
 	cone.rings = 1
 	_tree_mat = _make_multimesh("Trees", cone, TREE_COLOR.lerp(SNOW, 0.25), trees)
 	var trees_node := get_node_or_null("Trees") as MultiMeshInstance3D
+	if trees_node != null:
+		var tsh := Shader.new()
+		tsh.code = TREE_SHADER
+		_tree_sm = ShaderMaterial.new()
+		_tree_sm.shader = tsh
+		trees_node.material_override = _tree_sm
 	_tree_mm = trees_node.multimesh if trees_node != null else null
 	_trees_rev = -1
 

@@ -41,6 +41,8 @@ func signature(b: Building) -> String:
 	var sig := "%s|%d|%d" % [b.type, b.stage, int(b.stage_fraction() * PROGRESS_STEPS)]
 	if BuildingDefs.has_yard(b.type):
 		sig += "|" + str(yard_state(b))
+	if b.damaged or b.burning:
+		sig += "|dmg%d_fire%d" % [int(b.damaged), int(b.burning)]
 	return sig
 
 
@@ -55,7 +57,7 @@ func _animate_wells() -> void:
 		var seed_v := -1.0
 		if villagers != null:
 			for v: Villager in villagers.villagers.values():
-				if v.at_site and not v.moving and v.task.get("kind", &"") == &"water" and v.task.get("phase", &"") == &"fetch" and int(v.task.get("src", 0)) == id:
+				if v.at_site and not v.moving and (v.task.get("kind", &"") == &"water" or v.task.get("kind", &"") == &"extinguish") and v.task.get("phase", &"") == &"fetch" and int(v.task.get("src", 0)) == id:
 					seed_v = float(v.id)
 					break
 		WellAnim.apply(_nodes[id]["node"], seed_v >= 0.0, VillagerAnim.crank_phase(VillagerAnim.clock, maxf(seed_v, 0.0)))
@@ -83,6 +85,13 @@ func refresh() -> void:
 			n.name = "Building%d" % id
 			if BuildingDefs.has_yard(b.type):
 				n.add_child(BuildingMeshes.make_yard(b.type, yard_state(b)))
+			if b.is_done() and (b.damaged or b.burning):
+				var fp := b.size()
+				n.add_child(WeatherFx.make_soot(fp, BuildingDefs.wall_height(b.type) + 0.6))
+				if b.burning:
+					var fx := WeatherFx.make_fire(maxf(fp.x, fp.y) * 0.3, BuildingDefs.wall_height(b.type) + 1.2, 28)
+					fx.position.y = BuildingDefs.wall_height(b.type) * 0.6
+					n.add_child(fx)
 			add_child(n)
 			entry = {"node": n, "sig": sig}
 			_nodes[id] = entry

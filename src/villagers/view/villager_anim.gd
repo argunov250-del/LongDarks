@@ -29,7 +29,7 @@ const LOAD_BUCKETS := &"buckets"
 static func load_of(task: Dictionary) -> StringName:
 	if task.is_empty():
 		return LOAD_NONE
-	if task.get("kind", &"") == &"water":
+	if task.get("kind", &"") == &"water" or task.get("kind", &"") == &"extinguish":
 		return LOAD_BUCKETS  # вёдра в руках: пустые по пути к колодцу, полные обратно
 	if int(task.get("carry", 0)) <= 0:
 		return LOAD_NONE
@@ -58,7 +58,7 @@ static func state_of(v: Villager, vs: VillagerSystem = null) -> Dictionary:
 			pose = POSE_CHOP if phase == &"chop" else (POSE_STACK if phase == &"deliver" else POSE_PICKUP)
 		&"carry", &"food", &"stoke":
 			pose = POSE_STACK if phase == &"deliver" else POSE_PICKUP
-		&"water":
+		&"water", &"extinguish":
 			pose = POSE_STACK if phase == &"deliver" else POSE_CRANK
 		&"garden":
 			if phase == &"deliver":

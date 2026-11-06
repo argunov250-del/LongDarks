@@ -200,6 +200,12 @@ func bind_seasons(system: SeasonSystem) -> void:
 	_refresh_clock(true)
 
 
+## Короткое сообщение о начале погодного события (прогноза в интерфейсе нет).
+func bind_weather(sim_in: Simulation) -> void:
+	sim_in.bus.subscribe(WeatherSystem.TOPIC_STARTED, func(p: Dictionary) -> void:
+		villagers_ui.show_toast(WeatherDefs.toast_text(p.get("id", &""))))
+
+
 func bind_villagers(system: VillagerSystem) -> void:
 	villagers_ui.bind(system, sim)
 

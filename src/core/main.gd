@@ -5,6 +5,8 @@ const DEFAULT_WORLD_SEED := 20260401
 
 var world_map: WorldMap
 var seasons: SeasonSystem
+var weather: WeatherSystem
+var weather_visuals: WeatherVisuals
 var season_visuals: SeasonVisuals
 var world_view: WorldView
 var economy: EconomySystem
@@ -37,6 +39,10 @@ func _ready() -> void:
 	villagers.start_new_game()
 	seasons.bind(economy, construction, villagers)
 	StartState.populate(construction, villagers, seasons)
+	weather = WeatherSystem.new()
+	SimRunner.sim.register_system(weather)  # после жителей: тикает последним
+	weather.attach(SimRunner.sim)
+	weather.bind(seasons, construction, villagers)
 	world_view = WorldView.new()
 	world_view.name = "World"
 	add_child(world_view)
@@ -53,10 +59,16 @@ func _ready() -> void:
 	villagers_view.setup(villagers)
 	$UI/HUD.bind_villagers(villagers)
 	$UI/HUD.bind_seasons(seasons)
+	$UI/HUD.bind_weather(SimRunner.sim)
 	season_visuals = SeasonVisuals.new()
 	season_visuals.name = "SeasonVisuals"
 	add_child(season_visuals)
+	season_visuals.weather = weather
 	season_visuals.setup(seasons, world_view, $WorldEnvironment, $DirectionalLight3D)
+	weather_visuals = WeatherVisuals.new()
+	weather_visuals.name = "WeatherVisuals"
+	add_child(weather_visuals)
+	weather_visuals.setup(weather, world_view, construction, $CameraRig/Camera3D)
 	var rig: CameraRig = $CameraRig
 	rig.setup(world_map, $CameraRig/Camera3D)
 	SimRunner.sim.register_system(rig.save_system)
