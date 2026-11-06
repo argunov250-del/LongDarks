@@ -44,6 +44,9 @@ var selected_ruin := -1
 var selected_villager := -1
 var restore_menu := false
 var felling_mode := false
+var field_mode := false          # кисть полей (шаг 16): тот же режим кисти, цель — разметка поля
+var field_crop: StringName = &"grain"
+var food: FoodSystem
 var brush_radius := 6.0
 var brush_circle := true
 var brush_pos := Vector3.ZERO
@@ -71,6 +74,7 @@ func setup(construction: ConstructionSystem, cam: Camera3D, hud_in: Hud, view: W
 	hud.build_selected.connect(start_placement)
 	hud.action_pressed.connect(on_action)
 	hud.fell_requested.connect(start_felling_mode)
+	hud.field_requested.connect(start_field_mode)
 	hud.villager_card_requested.connect(select_villager)
 	sim.bus.subscribe(ConstructionSystem.TOPIC_CHANGED, _on_changed)
 	_on_changed({})
@@ -209,10 +213,25 @@ func start_felling_mode() -> void:
 	_update_brush()
 
 
+func start_field_mode() -> void:
+	if food == null:
+		return
+	start_felling_mode()
+	field_mode = true
+	_update_brush()
+
+
+func cycle_field_crop() -> void:
+	var i := FoodDefs.CROPS.find(field_crop)
+	field_crop = FoodDefs.CROPS[(i + 1) % FoodDefs.CROPS.size()]
+	_update_brush()
+
+
 func cancel_felling_mode() -> void:
 	if not felling_mode:
 		return
 	felling_mode = false
+	field_mode = false
 	brush_cells = []
 	if _brush != null:
 		_brush.queue_free()
@@ -235,7 +254,7 @@ func confirm_felling() -> int:
 	if not felling_mode:
 		return 0
 	_update_brush()
-	var n := con.start_felling(brush_cells)
+	var n := food.designate(brush_cells, field_crop) if field_mode else con.start_felling(brush_cells)
 	cancel_felling_mode()
 	return n
 
@@ -246,7 +265,7 @@ func _update_brush() -> void:
 	var hit = pick_ground()
 	if hit != null:
 		brush_pos = hit
-	brush_cells = con.fell_cells_in_brush(brush_pos, brush_radius, brush_circle)
+	brush_cells = food.field_cells_in_brush(brush_pos, brush_radius, brush_circle) if field_mode else con.fell_cells_in_brush(brush_pos, brush_radius, brush_circle)
 	if _brush == null or _brush_drawn != brush_radius or _brush_circle_drawn != brush_circle:
 		if _brush != null:
 			_brush.queue_free()
@@ -268,6 +287,16 @@ func _update_brush() -> void:
 		_brush_drawn = brush_radius
 		_brush_circle_drawn = brush_circle
 	_brush.position = Vector3(brush_pos.x, con.ground_height(brush_pos) + 0.2, brush_pos.z)
+	if field_mode:
+		hud.show_actions("Поле: %s, %s, радиус %d м\nСвободных клеток: %d (лес сначала вырубить)" % [
+				FoodDefs.CROP_NAMES[field_crop].to_lower(), "круг" if brush_circle else "квадрат", roundi(brush_radius), brush_cells.size()], [
+			[&"field_crop", FoodDefs.CROP_NAMES[field_crop], true],
+			[&"fell_shape", "Круг" if not brush_circle else "Квадрат", true],
+			[&"fell_minus", "−", brush_radius > BRUSH_MIN],
+			[&"fell_plus", "+", brush_radius < BRUSH_MAX],
+			[&"fell_confirm", "Разметить", not brush_cells.is_empty()],
+			[&"fell_cancel", "Отмена", true]])
+		return
 	hud.show_actions("Вырубка: %s, радиус %d м\nДеревьев в %d клетках леса" % [
 			"круг" if brush_circle else "квадрат", roundi(brush_radius), brush_cells.size()], [
 		[&"fell_shape", "Круг" if not brush_circle else "Квадрат", true],
@@ -336,6 +365,9 @@ func select_at(p: Vector3) -> void:
 	var rid := con.ruin_at(p)
 	if rid >= 0:
 		select_ruin(rid)
+	elif food != null and not food.field_at(map.cell_of(p.x, p.z)).is_empty():
+		clear_selection()
+		hud.show_actions(food.field_text(map.cell_of(p.x, p.z)), [[&"close", "Закрыть", true]])
 	else:
 		clear_selection()
 
@@ -425,6 +457,13 @@ func _upgrade_label(b: Building) -> String:
 
 
 func _building_text(b: Building) -> String:
+	var base := _building_text_base(b)
+	if food != null and BuildingDefs.is_greenhouse(b.type) and b.is_done():
+		base += "\n" + food.greenhouse_text(b.id)
+	return base
+
+
+func _building_text_base(b: Building) -> String:
 	var t := BuildingDefs.display_name(b.type)
 	if b.is_done():
 		if production != null and production.is_producing_building(b.id):
@@ -518,6 +557,8 @@ func on_action(id: StringName) -> void:
 	match id:
 		&"fell_shape":
 			toggle_brush_shape()
+		&"field_crop":
+			cycle_field_crop()
 		&"fell_minus":
 			change_brush(-BRUSH_STEP)
 		&"fell_plus":

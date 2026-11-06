@@ -9,6 +9,8 @@ var weather: WeatherSystem
 var weather_visuals: WeatherVisuals
 var climate: ClimateSystem
 var climate_birds: ClimateBirds
+var food: FoodSystem
+var food_view: FoodView
 var season_visuals: SeasonVisuals
 var world_view: WorldView
 var economy: EconomySystem
@@ -49,6 +51,11 @@ func _ready() -> void:
 	SimRunner.sim.register_system(climate)
 	climate.attach(SimRunner.sim)
 	climate.bind(seasons)
+	food = FoodSystem.new()
+	SimRunner.sim.register_system(food)
+	food.attach(SimRunner.sim)
+	food.bind(economy, world_map, construction, seasons, weather, climate)
+	villagers.food = food
 	world_view = WorldView.new()
 	world_view.name = "World"
 	add_child(world_view)
@@ -79,6 +86,10 @@ func _ready() -> void:
 	climate_birds.name = "ClimateBirds"
 	add_child(climate_birds)
 	climate_birds.setup(climate, seasons, world_map, economy.deposits, func() -> Vector3: return weather_visuals._focus_point())
+	food_view = FoodView.new()
+	food_view.name = "FoodView"
+	add_child(food_view)
+	food_view.setup(food, world_map, SimRunner.sim)
 	var rig: CameraRig = $CameraRig
 	rig.setup(world_map, $CameraRig/Camera3D)
 	SimRunner.sim.register_system(rig.save_system)
@@ -89,4 +100,5 @@ func _ready() -> void:
 	build_controller.production = production
 	build_controller.villagers = villagers
 	build_controller.villagers_view = villagers_view
+	build_controller.food = food
 	print("LongDarks: main scene ready, world %dx%d, terrain verts %d" % [world_map.size, world_map.size, world_view.terrain_vertex_count])

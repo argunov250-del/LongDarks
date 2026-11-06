@@ -44,6 +44,10 @@ func bind(economy_in: EconomySystem, world_in: WorldMap, construction_in: Constr
 	_init_world()
 
 
+func attach(sim: Simulation) -> void:
+	_sim = sim
+
+
 static func is_food_kind(kind: StringName) -> bool:
 	return kind in [&"field", &"hunt", &"fish", &"forage", &"gfuel", &"gpick"]
 
