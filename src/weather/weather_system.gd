@@ -399,7 +399,7 @@ func tick(sim: Simulation, dt: float) -> void:
 		var id: StringName = _active["id"]
 		if id == WeatherDefs.FLOOD:
 			var lvl := WeatherDefs.flood_level(float(_active["elapsed"]), float(_active["duration"]))
-			if absf(lvl - _flood_level_applied) >= WeatherDefs.FLOOD_LEVEL_STEP or (lvl == 0.0 and _flood_level_applied != 0.0):
+			if absf(lvl - _flood_level_applied) >= WeatherDefs.FLOOD_LEVEL_STEP or ((lvl == 0.0 or lvl == WeatherDefs.FLOOD_HEIGHT) and _flood_level_applied != lvl):
 				_set_flood_level(lvl)
 		if WeatherDefs.def(id).get("lightning", false):
 			_lightning_acc += dt

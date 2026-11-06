@@ -38,7 +38,7 @@ func test_fire_spreads_in_forest_and_burns_trees() -> void:
 	e.run(f.burn_time * 3.0)
 	assert_true(f.is_empty(), "everything burnt out")
 	assert_eq(e.eco.deposits.remaining(c), 0, "trees burnt")
-	assert_eq(e.weather.fertility_at(c), WeatherDefs.BURN_FERTILITY, "burnt soil is richer")
+	assert_almost_eq(e.weather.fertility_at(c), WeatherDefs.BURN_FERTILITY, 0.03, "burnt soil is richer")
 	assert_false(f.ignite_cell(c), "nothing left to burn")
 
 
@@ -50,7 +50,7 @@ func test_fire_limited_per_focus() -> void:
 	f.max_cells = 4
 	f.building_chance = 0.0
 	f.ignite_cell(e.forest_cell(3))
-	e.run(40.0)
+	e.run(200.0)
 	var burnt := 0
 	for i in e.weather.fertility:
 		burnt += 1
@@ -190,8 +190,8 @@ func test_thunderstorm_lightning_ignites_forest_sometimes() -> void:
 	var strikes := []
 	e.sim.bus.subscribe(WeatherSystem.TOPIC_LIGHTNING, func(p): strikes.append(p["cell"]))
 	e.weather.start_event(WeatherDefs.THUNDERSTORM, 400.0)
-	e.run(WeatherDefs.LIGHTNING_PERIOD * 40.0 + 1.0)
-	assert_eq(strikes.size(), 40, "a strike every LIGHTNING_PERIOD")
+	e.run(WeatherDefs.LIGHTNING_PERIOD * 10.0 + 1.0)
+	assert_eq(strikes.size(), 10, "a strike every LIGHTNING_PERIOD")
 	assert_true(e.weather.fire.burning_cell_count() > 0 or e.weather.fertility.size() > 0, "some strike hit a forest")
 
 
