@@ -46,6 +46,9 @@ const MUD_PEAK_END := 0.45             # до этой доли весны гр�
 const SNOW_SPRING_MELT_FROM := 0.05
 const SNOW_SPRING_MELT_TO := 0.6
 const SNOW_AUTUMN_FROM := 0.6
+## При полном потеплении (climate_warm_fraction = 1, шаг 15) весенний снег тает по этим долям весны.
+const SNOW_SPRING_MELT_FROM_WARM := 0.0
+const SNOW_SPRING_MELT_TO_WARM := 0.3
 ## Значения в серединах сезонов (между ними — плавно).
 const GRASS_TINT := {
 	SPRING: Color(0.85, 1.12, 0.75), SUMMER: Color(0.70, 1.32, 0.60),

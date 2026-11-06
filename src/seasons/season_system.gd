@@ -22,6 +22,11 @@ var weather_build_multiplier: float = 1.0
 var weather_walk_multiplier: float = 1.0
 var weather_mud_floor: float = 0.0
 
+## ХУКИ КЛИМАТА (ClimateSystem, шаг 15): добавка к сезонной температуре, °C, и доля потепления 0..1
+## (раньше тает снег). Не путать с погодой: климат меняется по годам, погода — по событиям.
+var climate_temp_offset: float = 0.0
+var climate_warm_fraction: float = 0.0
+
 var economy: EconomySystem
 var construction: ConstructionSystem
 var villagers: VillagerSystem
@@ -167,7 +172,7 @@ func blend(values: Dictionary, t: float = -1.0) -> Variant:
 
 ## Сезонная средняя температура (без суточных колебаний и шума).
 func base_temp() -> float:
-	return blend(SeasonDefs.SEASON_TEMP)
+	return blend(SeasonDefs.SEASON_TEMP) + climate_temp_offset
 
 
 static func _hash_noise(n: int) -> float:
@@ -245,7 +250,10 @@ func snow_cover() -> float:
 		SeasonDefs.WINTER:
 			return 1.0
 		SeasonDefs.SPRING:
-			return 1.0 - smoothstep(SeasonDefs.SNOW_SPRING_MELT_FROM, SeasonDefs.SNOW_SPRING_MELT_TO, p)
+			var k := clampf(climate_warm_fraction, 0.0, 1.0)  # потепление: снег тает раньше
+			var from := lerpf(SeasonDefs.SNOW_SPRING_MELT_FROM, SeasonDefs.SNOW_SPRING_MELT_FROM_WARM, k)
+			var to := lerpf(SeasonDefs.SNOW_SPRING_MELT_TO, SeasonDefs.SNOW_SPRING_MELT_TO_WARM, k)
+			return 1.0 - smoothstep(from, to, p)
 		SeasonDefs.AUTUMN:
 			return smoothstep(SeasonDefs.SNOW_AUTUMN_FROM, 1.0, p)
 	return 0.0

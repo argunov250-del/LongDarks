@@ -7,6 +7,8 @@ var world_map: WorldMap
 var seasons: SeasonSystem
 var weather: WeatherSystem
 var weather_visuals: WeatherVisuals
+var climate: ClimateSystem
+var climate_birds: ClimateBirds
 var season_visuals: SeasonVisuals
 var world_view: WorldView
 var economy: EconomySystem
@@ -43,6 +45,10 @@ func _ready() -> void:
 	SimRunner.sim.register_system(weather)  # после жителей: тикает последним
 	weather.attach(SimRunner.sim)
 	weather.bind(seasons, construction, villagers)
+	climate = ClimateSystem.new()
+	SimRunner.sim.register_system(climate)
+	climate.attach(SimRunner.sim)
+	climate.bind(seasons)
 	world_view = WorldView.new()
 	world_view.name = "World"
 	add_child(world_view)
@@ -69,6 +75,10 @@ func _ready() -> void:
 	weather_visuals.name = "WeatherVisuals"
 	add_child(weather_visuals)
 	weather_visuals.setup(weather, world_view, construction, $CameraRig/Camera3D)
+	climate_birds = ClimateBirds.new()
+	climate_birds.name = "ClimateBirds"
+	add_child(climate_birds)
+	climate_birds.setup(climate, seasons, world_map, economy.deposits, func() -> Vector3: return weather_visuals._focus_point())
 	var rig: CameraRig = $CameraRig
 	rig.setup(world_map, $CameraRig/Camera3D)
 	SimRunner.sim.register_system(rig.save_system)
