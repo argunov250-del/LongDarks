@@ -399,6 +399,8 @@ func _build_jobs() -> void:
 	_jobs.clear()
 	_job_by_key.clear()
 	var outdoor_ok := construction.build_speed_multiplier > 0.0  # погода стопорит уличную работу
+	if household.shelter_required:
+		return  # метель/ураган/гроза: все сидят по домам, никакой работы (нужные дела — в NeedsSystem)
 	for id in construction.buildings:
 		var b: Building = construction.buildings[id]
 		if not b.is_done():
