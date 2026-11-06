@@ -14,6 +14,7 @@ var stove: int = 0              # дрова в печи
 var water: int = 0
 var water_cap: int = HouseholdDefs.HOUSE_WATER_CAPACITY
 var food: Storage               # еда (картофель, овощи, яйца, молоко, ...)
+var water_bad: bool = false     # шаг 17: в запасе вода из колодца на отравленной земле
 var garden_state: StringName = GARDEN_EMPTY
 var garden_progress: float = 0.0
 var garden_crop: StringName = &"potato"  # культура текущего цикла (чередуется)
@@ -50,7 +51,7 @@ func garden_fraction() -> float:
 
 func to_dict() -> Dictionary:
 	return {
-		"id": id, "kind": String(kind), "woodpile": woodpile, "stove": stove, "water": water,
+		"water_bad": water_bad, "id": id, "kind": String(kind), "woodpile": woodpile, "stove": stove, "water": water,
 		"food": food.to_dict(), "garden": String(garden_state), "garden_progress": garden_progress,
 		"crop": String(garden_crop), "barn": barn, "egg_acc": egg_acc, "milk_acc": milk_acc,
 		"warmth": warmth, "burn_left": burn_left,
@@ -66,6 +67,7 @@ static func from_dict(d: Dictionary) -> Household:
 		var f := Storage.from_dict(d["food"])
 		f.capacity = h.food.capacity
 		h.food = f
+	h.water_bad = bool(d.get("water_bad", false))
 	var g := StringName(String(d.get("garden", "empty")))
 	h.garden_state = g if [GARDEN_EMPTY, GARDEN_GROWING, GARDEN_RIPE].has(g) else GARDEN_EMPTY
 	h.garden_progress = float(d.get("garden_progress", 0.0))

@@ -195,12 +195,14 @@ func water_room(id: int) -> int:
 	return maxi(0, h.water_cap - h.water) if h != null else 0
 
 
-func add_water(id: int, n: int) -> int:
+func add_water(id: int, n: int, bad: bool = false) -> int:
 	var h := stock_of(id)
 	if h == null or n <= 0:
 		return 0
 	var moved := mini(n, water_room(id))
 	h.water += moved
+	if bad and moved > 0:
+		h.water_bad = true
 	return moved
 
 
@@ -255,9 +257,28 @@ func current_season() -> StringName:
 	return seasons.season() if seasons != null else &""
 
 
+## Step 17 (design/gdd/land-restoration.md): set by Main/tests; null — no poison rules.
+var restoration: RestorationSystem
+
+
+## The garden cell lies on poisoned land: nothing grows («земля отравлена»).
+func garden_poisoned(id: int) -> bool:
+	var b := construction.get_building(id)
+	if restoration == null or b == null:
+		return false
+	var p := garden_pos(b)
+	return restoration.is_poisoned(construction.world.cell_of(p.x, p.z))
+
+
+## The well stands in poison: its water is bad.
+func well_bad(well_id: int) -> bool:
+	var b := construction.get_building(well_id)
+	return restoration != null and b != null and restoration.water_bad_at(b.position)
+
+
 func can_plant(id: int, _day: int = 0) -> bool:
 	var h := home(id)
-	return h != null and h.garden_state == Household.GARDEN_EMPTY and HouseholdDefs.garden_season_allows(current_season(), &"plant")
+	return h != null and not garden_poisoned(id) and h.garden_state == Household.GARDEN_EMPTY and HouseholdDefs.garden_season_allows(current_season(), &"plant")
 
 
 func can_harvest(id: int, _day: int = 0) -> bool:

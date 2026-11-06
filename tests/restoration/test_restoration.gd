@@ -286,3 +286,52 @@ func test_restoration_view_draws_saplings_and_poison_fade() -> void:
 	assert_true(v.plant_count > 1, "cleansing vegetation drawn")
 	assert_true(RestorationView.poison_color(1.0) != RestorationView.poison_color(0.0), "colour fades with poison")
 	v.free()
+
+
+func _poison_center(r: Variant) -> Vector3:
+	var sum := Vector2.ZERO
+	var n := 0
+	for cz in r.world.size:
+		for cx in r.world.size:
+			if r.world.cell_type(cx, cz) == WorldMap.Terrain.POISON:
+				sum += Vector2(cx, cz)
+				n += 1
+	var mid := sum / float(n)
+	var best := Vector2i(-1, -1)
+	var bd := INF
+	for cz in r.world.size:
+		for cx in r.world.size:
+			if r.world.cell_type(cx, cz) == WorldMap.Terrain.POISON and Vector2(cx, cz).distance_to(mid) < bd:
+				bd = Vector2(cx, cz).distance_to(mid)
+				best = Vector2i(cx, cz)
+	return r.world.cell_center(best.x, best.y)
+
+
+func test_garden_on_poison_does_not_grow_but_house_can_stand() -> void:
+	var r := RestEnv.new()
+	r.e.vs.household.restoration = r.rs
+	var id: int = r.e.add_done(&"dugout")
+	var b: Building = r.e.con.get_building(id)
+	b.position = _poison_center(r)
+	assert_true(r.rs.is_poisoned(r.world.cell_of(b.position.x, b.position.z)), "test cell is poison")
+	assert_true(r.e.vs.household.garden_poisoned(id), "garden on poison")
+	assert_false(r.e.vs.household.can_plant(id), "nothing can be planted in a poisoned garden")
+	assert_true(b.is_done(), "the house itself stands on poison")
+
+
+func test_poisoned_well_gives_bad_water_that_hurts() -> void:
+	var r := RestEnv.new()
+	var hs: HouseholdSystem = r.e.vs.household
+	hs.restoration = r.rs
+	var wid: int = r.e.add_done(&"well")
+	var well: Building = r.e.con.get_building(wid)
+	well.position = _poison_center(r)
+	assert_true(hs.well_bad(wid), "well inside poison: bad water")
+	var hid: int = r.e.add_done(&"dugout")
+	assert_true(hs.add_water(hid, 2, true) > 0)
+	assert_true(hs.stock_of(hid).water_bad, "stock marked bad")
+	var v: Villager = r.e.add_villager(&"farmer")
+	v.set_need(NeedsDefs.HEALTH, 1.0)
+	r.e.vs.drink_bad_water(v)
+	assert_almost_eq(v.need(NeedsDefs.HEALTH), 1.0 - NeedsDefs.BAD_WATER_HEALTH_LOSS, 0.0001)
+	assert_true(NeedsDefs.sick_rate_per_day(v.needs, v.bad_water_days > 0.0) > NeedsDefs.sick_rate_per_day(v.needs), "higher sickness chance")

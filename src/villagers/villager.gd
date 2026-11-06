@@ -22,6 +22,7 @@ var think_cd := 0.0
 var needs: Dictionary = NeedsDefs.full()  # NeedsDefs.NEEDS -> 0..1 (шаг 11)
 var sick := false
 var home_id: int = 0                # здание-жильё, 0 — бездомный (расселяет VillagerSystem.assign_homes)
+var bad_water_days := 0.0          # шаг 17: сколько суток ещё повышен шанс заболеть (плохая вода)
 var sick_acc := 0.0                 # накопление до следующего броска на болезнь
 var banned: Dictionary = {}         # key -> время, до которого цель недоступна (не сохраняется)
 

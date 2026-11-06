@@ -231,9 +231,10 @@ func _tick_one(v: Villager, dt: float, days: float, staff: Dictionary) -> void:
 	# болезнь (детерминированный RNG симуляции)
 	if not v.sick:
 		v.sick_acc += dt
+		v.bad_water_days = maxf(0.0, v.bad_water_days - dt / day_seconds())
 		if v.sick_acc >= NeedsDefs.SICK_ROLL_INTERVAL:
 			v.sick_acc -= NeedsDefs.SICK_ROLL_INTERVAL
-			var p := 1.0 - exp(-NeedsDefs.sick_rate_per_day(v.needs) * NeedsDefs.SICK_ROLL_INTERVAL / day_seconds())
+			var p := 1.0 - exp(-NeedsDefs.sick_rate_per_day(v.needs, v.bad_water_days > 0.0) * NeedsDefs.SICK_ROLL_INTERVAL / day_seconds())
 			if vs._rng().randf() < p:
 				fall_sick(v)
 

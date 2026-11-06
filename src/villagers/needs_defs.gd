@@ -91,6 +91,9 @@ const REGEN_NEEDS_MIN := 0.35
 const SICK_BASE_PER_DAY := 0.01    # шанс заболеть в сутки при сытой жизни
 const SICK_NEED_WEIGHT := 0.33      # + сумма ((FLOOR-потребность)/FLOOR)^2 по базовым потребностям
 const SICK_NEED_FLOOR := 0.5       # выше этого уровня потребность на болезнь не влияет
+const BAD_WATER_HEALTH_LOSS := 0.06   # здоровье за глоток воды из отравленного колодца (шаг 17)
+const BAD_WATER_SICK_DAYS := 2.0       # столько суток шанс заболеть повышен
+const BAD_WATER_SICK_BONUS := 0.25     # добавка к шансу заболеть в сутки
 const SICK_ROLL_INTERVAL := 20.0   # как часто бросать кубик, игр. с
 const SICK_DRAIN_PER_DAY := 0.13    # без лечения здоровье падает
 const SICK_START_HEALTH_CAP := 0.85
@@ -128,8 +131,8 @@ static func cold_factor(kind: StringName, cold: float) -> float:
 
 
 ## Шанс заболеть в сутки по уровням потребностей (чем ниже, тем выше).
-static func sick_rate_per_day(needs: Dictionary) -> float:
-	var r := SICK_BASE_PER_DAY
+static func sick_rate_per_day(needs: Dictionary, bad_water: bool = false) -> float:
+	var r := SICK_BASE_PER_DAY + (BAD_WATER_SICK_BONUS if bad_water else 0.0)
 	for n in BASIC:
 		var d := maxf(0.0, SICK_NEED_FLOOR - float(needs.get(n, 1.0))) / SICK_NEED_FLOOR
 		r += SICK_NEED_WEIGHT * d * d

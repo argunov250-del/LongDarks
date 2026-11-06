@@ -596,6 +596,7 @@ func _assign(v: Villager, job: Dictionary) -> void:
 		&"water", &"extinguish":
 			v.task["phase"] = &"fetch"
 			v.task["src"] = household.nearest_well(v.pos)  # id здания-колодца
+			v.task["bad_water"] = household.well_bad(v.task["src"])
 		&"garden":
 			v.task["phase"] = &"work"
 		&"field", &"hunt", &"fish", &"forage", &"gpick", &"plant", &"heal_land":
@@ -971,6 +972,12 @@ func _work(v: Villager, t: Dictionary, dt: float) -> void:
 
 
 ## Приём пищи/воды: по единице из запаса дома или столовой (порции по EAT_UNIT_TIME).
+## Bad (poisoned well) water: health loss and a higher chance to fall sick for a while.
+func drink_bad_water(v: Villager) -> void:
+	v.set_need(NeedsDefs.HEALTH, maxf(0.0, v.need(NeedsDefs.HEALTH) - NeedsDefs.BAD_WATER_HEALTH_LOSS))
+	v.bad_water_days = NeedsDefs.BAD_WATER_SICK_DAYS
+
+
 func _work_meal(v: Villager, t: Dictionary, dt: float) -> void:
 	var eating: bool = t["kind"] == &"eat"
 	t["work"] += dt
@@ -995,6 +1002,10 @@ func _work_meal(v: Villager, t: Dictionary, dt: float) -> void:
 			return
 		h.water -= 1
 		gain = NeedsDefs.WATER_PER_UNIT
+		if h.water_bad:
+			drink_bad_water(v)
+		if h.water <= 0:
+			h.water_bad = false
 	var n := NeedsDefs.FOOD if eating else NeedsDefs.WATER
 	v.set_need(n, v.need(n) + gain)
 	if v.need(n) >= NeedsDefs.MEAL_FULL:
@@ -1154,7 +1165,7 @@ func _finish_delivery(v: Villager, t: Dictionary) -> void:
 		&"firewood":
 			added = household.add_firewood(target, n, t["dest"] == &"stove")
 		&"water":
-			added = household.add_water(target, n)
+			added = household.add_water(target, n, bool(t.get("bad_water", false)))
 		_:
 			added = household.add_food(target, res, n)
 	if n > added and res != &"water":

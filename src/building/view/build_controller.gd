@@ -506,6 +506,8 @@ func _building_text(b: Building) -> String:
 	var base := _building_text_base(b)
 	if food != null and BuildingDefs.is_greenhouse(b.type) and b.is_done():
 		base += "\n" + food.greenhouse_text(b.id)
+	if restoration != null and BuildingDefs.is_well(b.type) and restoration.water_bad_at(b.position):
+		base += "\nВода плохая"
 	return base
 
 
@@ -567,6 +569,8 @@ func household_text(b: Building) -> String:
 	elif h.garden_state == &"empty":
 		t += " (след.: %s)" % ResourceDefs.display_name(h.garden_crop)
 	t += "\nВода: %d/%d\nЕда: %s (%d/%d)" % [h.water, h.water_cap, _food_text(h), h.food.used(), h.food.capacity]
+	if villagers != null and villagers.household.garden_poisoned(b.id):
+		t += "\nОгород: земля отравлена"
 	var bn := con.barn_of(b.id)
 	if h.barn:
 		t += "\nСарай: куры и корова"

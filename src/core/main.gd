@@ -61,6 +61,7 @@ func _ready() -> void:
 	restoration = RestorationSystem.new()
 	SimRunner.sim.register_system(restoration)
 	restoration.attach(SimRunner.sim)
+	villagers.household.restoration = restoration
 	restoration.bind(economy, world_map, construction, food, climate, seasons)
 	world_view = WorldView.new()
 	world_view.name = "World"
