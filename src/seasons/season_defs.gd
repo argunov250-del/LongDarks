@@ -65,6 +65,23 @@ const LIGHT_COLOR := {
 	AUTUMN: Color(1.0, 0.86, 0.70), WINTER: Color(0.88, 0.92, 1.0),
 }
 const LIGHT_ENERGY := {SPRING: 1.1, SUMMER: 1.3, AUTUMN: 1.0, WINTER: 0.9}
+# ---------- день и ночь (освещение по GameClock) ----------
+const SUNRISE_HOUR := 6.0              # солнце на горизонте; полдень — посередине
+const SUNSET_HOUR := 18.0
+const SUN_MIN_PITCH := 12.0            # град. над горизонтом (на рассвете/закате, и луна ночью)
+const SUN_MAX_PITCH := 58.0            # в полдень
+const SUN_YAW_NOON := 30.0             # град.; за день солнце проходит SUN_YAW_ARC
+const SUN_YAW_ARC := 140.0
+const MOON_PITCH := 40.0
+const MOON_YAW := -40.0
+const MOON_COLOR := Color(0.62, 0.70, 0.95)
+const NIGHT_LIGHT_ENERGY := 0.28       # ночью темнее, но видно (играбельно)
+const DAY_AMBIENT_ENERGY := 0.7
+const NIGHT_AMBIENT_ENERGY := 0.4
+const NIGHT_AMBIENT_COLOR := Color(0.42, 0.50, 0.72)
+const NIGHT_SKY := Color(0.10, 0.13, 0.22)
+const DUSK_COLOR := Color(1.0, 0.62, 0.40)  # тёплый свет у горизонта
+
 const AMBIENT_COLOR := {
 	SPRING: Color(0.72, 0.78, 0.86), SUMMER: Color(0.74, 0.80, 0.88),
 	AUTUMN: Color(0.78, 0.74, 0.74), WINTER: Color(0.70, 0.76, 0.88),
@@ -85,3 +102,14 @@ static func default_durations() -> Dictionary:
 ## outdoor_cold 0..1 (хук потребностей) из температуры.
 static func cold_from_temp(temp: float) -> float:
 	return clampf((COLD_ZERO_TEMP - temp) / (COLD_ZERO_TEMP - COLD_FULL_TEMP), 0.0, 1.0)
+
+
+## Доля дня 0 (ночь) .. 1 (день) по часу суток; плавные сумерки вокруг восхода и заката.
+static func daylight(hour: float) -> float:
+	var e := sin((hour - SUNRISE_HOUR) / (SUNSET_HOUR - SUNRISE_HOUR) * PI)
+	return smoothstep(-0.2, 0.25, e)
+
+
+## Высота солнца 0..1 (0 — у горизонта или ниже).
+static func sun_height(hour: float) -> float:
+	return maxf(0.0, sin((hour - SUNRISE_HOUR) / (SUNSET_HOUR - SUNRISE_HOUR) * PI))

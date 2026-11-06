@@ -183,6 +183,11 @@ func _hour() -> float:
 	return _sim.clock.get_hour() if _sim != null else 12.0
 
 
+## Час суток по часам симуляции (12 — без симуляции).
+func hour() -> float:
+	return _hour()
+
+
 ## Температура воздуха снаружи, °C: сезонная кривая + суточный размах + детерминированный шум.
 func outdoor_temp() -> float:
 	var swing: float = blend(SeasonDefs.DAY_SWING)

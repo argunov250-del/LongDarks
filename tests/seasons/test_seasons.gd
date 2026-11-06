@@ -293,8 +293,35 @@ func test_start_state_contents() -> void:
 	assert_true(e.seasons.progress() >= 0.75, "end of winter")
 	assert_eq(StartState.START_SEASON_PROGRESS, 0.8)
 	# дом сразу отапливается и стоит у героя рядом
+	for c in StartState.site_cells(e.world, b.position, b.rot, StartState.POISON_BUFFER_CELLS):
+		if c.x >= 0 and c.y >= 0 and c.x < e.world.size and c.y < e.world.size:
+			assert_true(e.world.cell_type(c.x, c.y) != WorldMap.Terrain.POISON, "start house outside poison buffer")
 	var d := e.vs.household.door_pos(b)
 	assert_true(Vector2(d.x - e.hero().pos.x, d.z - e.hero().pos.z).length() < 6.0, "hero near home")
+
+
+## Стартовый дом с двором — вне отравленной зоны (с буфером), не на воде/склоне, лес и вода рядом.
+func test_start_site_avoids_poison_with_buffer() -> void:
+	for seed_value in [12345, 20260401, 7, 99]:
+		var world := WorldMap.new(seed_value)
+		var eco := EconomySystem.new(world)
+		var con := ConstructionSystem.new(world, eco)
+		var f := world.factory_cell
+		var hub := world.cell_center(f.x, f.y)
+		var p := StartState.find_house_site(con, hub)
+		assert_true(p != Vector3.INF, "site found (seed %d)" % seed_value)
+		if p == Vector3.INF:
+			continue
+		for c in StartState.site_cells(world, p, 0.0, StartState.POISON_BUFFER_CELLS):
+			if c.x >= 0 and c.y >= 0 and c.x < world.size and c.y < world.size:
+				assert_true(world.cell_type(c.x, c.y) != WorldMap.Terrain.POISON, "no poison near house/yard %s (seed %d)" % [c, seed_value])
+		for c in StartState.site_cells(world, p, 0.0, 0):
+			assert_false(WorldMap.is_water_type(world.cell_type(c.x, c.y)), "not on water")
+		assert_true(con.validate_placement(StartState.HOUSE_TYPE, p, 0.0)["ok"], "valid: no water, slope ok")
+		assert_true(con.placement_tree_cells(StartState.HOUSE_TYPE, p, 0.0).is_empty(), "no trees under house")
+		var hc := world.cell_of(p.x, p.z)
+		assert_true(StartState._near(world, hc, StartState.FOREST_NEAR_CELLS, false), "forest near (seed %d)" % seed_value)
+		assert_true(StartState._near(world, hc, StartState.WATER_NEAR_CELLS, true), "water near (seed %d)" % seed_value)
 
 
 func test_save_load_mid_season() -> void:
@@ -335,3 +362,32 @@ func test_hud_shows_season_day_and_temperature() -> void:
 	assert_true(hud.time_label.text.begins_with("07:00"))
 	assert_true(hud.time_label.text.ends_with("°C"), hud.time_label.text)
 	hud.free()
+
+
+func test_day_night_lighting() -> void:
+	assert_true(SeasonDefs.daylight(12.0) > 0.95, "noon is day")
+	assert_true(SeasonDefs.daylight(0.0) < 0.05 and SeasonDefs.daylight(23.0) < 0.05, "night is dark")
+	assert_true(SeasonDefs.daylight(7.0) > SeasonDefs.daylight(5.0), "dawn brightens")
+	# реальная сцена: ночью свет и ambient слабее, но не ноль (играбельно)
+	var e := SEnv.new()
+	var env := WorldEnvironment.new()
+	env.environment = Environment.new()
+	env.environment.sky = Sky.new()
+	env.environment.sky.sky_material = ProceduralSkyMaterial.new()
+	var light := DirectionalLight3D.new()
+	var vis := SeasonVisuals.new()
+	vis.setup(e.seasons, null, env, light)
+	e.at(SeasonDefs.SUMMER, 0.5, 12.0)
+	vis.apply_now()
+	var day_energy := light.light_energy
+	var day_amb := env.environment.ambient_light_energy
+	var day_pitch := light.rotation.x
+	e.at(SeasonDefs.SUMMER, 0.5, 1.0)
+	vis.apply_now()
+	assert_true(light.light_energy < day_energy * 0.4, "night light dimmer")
+	assert_true(light.light_energy > 0.1, "but playable")
+	assert_true(env.environment.ambient_light_energy < day_amb, "night ambient dimmer")
+	assert_true(light.rotation.x < 0.0 and day_pitch < light.rotation.x, "sun higher at noon than moon")
+	vis.free()
+	light.free()
+	env.free()

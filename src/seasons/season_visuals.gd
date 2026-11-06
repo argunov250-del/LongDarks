@@ -1,7 +1,8 @@
 class_name SeasonVisuals
 extends Node
 ## Сезонный вид (шаг 13): снег и зелень на рельефе (параметры шейдера, без перестройки меша),
-## оттенок неба и света. Обновляется редко — дёшево для мобильных.
+## оттенок неба и света по сезону; смена дня и ночи (направление/цвет/яркость света, ambient, небо)
+## по часу GameClock. Обновляется редко — дёшево для мобильных.
 
 const UPDATE_INTERVAL := 0.25   # реальные секунды
 
@@ -34,14 +35,35 @@ func apply_now() -> void:
 	var amount: float = seasons.blend(SeasonDefs.GRASS_AMOUNT)
 	if world_view != null:
 		world_view.apply_season(seasons.snow_cover(), tint, amount)
+	var hour := seasons.hour()
+	var day := SeasonDefs.daylight(hour)
 	if light != null:
-		light.light_color = seasons.blend(SeasonDefs.LIGHT_COLOR)
-		light.light_energy = seasons.blend(SeasonDefs.LIGHT_ENERGY)
+		light.rotation = sun_rotation(hour)
+		var sun: Color = seasons.blend(SeasonDefs.LIGHT_COLOR)
+		var low := 1.0 - SeasonDefs.sun_height(hour)
+		sun = sun.lerp(SeasonDefs.DUSK_COLOR, low * low * 0.6)  # у горизонта свет теплее
+		light.light_color = SeasonDefs.MOON_COLOR.lerp(sun, day)
+		light.light_energy = lerpf(SeasonDefs.NIGHT_LIGHT_ENERGY, seasons.blend(SeasonDefs.LIGHT_ENERGY), day)
 	if environment != null:
-		environment.ambient_light_color = seasons.blend(SeasonDefs.AMBIENT_COLOR)
+		var amb: Color = seasons.blend(SeasonDefs.AMBIENT_COLOR)
+		environment.ambient_light_color = SeasonDefs.NIGHT_AMBIENT_COLOR.lerp(amb, day)
+		environment.ambient_light_energy = lerpf(SeasonDefs.NIGHT_AMBIENT_ENERGY, SeasonDefs.DAY_AMBIENT_ENERGY, day)
 		var sky := environment.sky
 		if sky != null and sky.sky_material is ProceduralSkyMaterial:
 			var m := sky.sky_material as ProceduralSkyMaterial
-			m.sky_top_color = seasons.blend(SeasonDefs.SKY_TOP)
-			m.sky_horizon_color = seasons.blend(SeasonDefs.SKY_HORIZON)
+			m.sky_top_color = SeasonDefs.NIGHT_SKY.lerp(seasons.blend(SeasonDefs.SKY_TOP), day)
+			m.sky_horizon_color = SeasonDefs.NIGHT_SKY.lerp(seasons.blend(SeasonDefs.SKY_HORIZON), day)
 			m.ground_horizon_color = m.sky_horizon_color
+
+
+## Направление света: днём — солнце по дуге (выше в полдень), ночью — луна, плавно между ними.
+static func sun_rotation(hour: float) -> Vector3:
+	var h := SeasonDefs.sun_height(hour)
+	var span := SeasonDefs.SUNSET_HOUR - SeasonDefs.SUNRISE_HOUR
+	var f := clampf((hour - SeasonDefs.SUNRISE_HOUR) / span, 0.0, 1.0)
+	var sun_pitch := lerpf(SeasonDefs.SUN_MIN_PITCH, SeasonDefs.SUN_MAX_PITCH, h)
+	var sun_yaw := SeasonDefs.SUN_YAW_NOON + (f - 0.5) * SeasonDefs.SUN_YAW_ARC
+	var day := SeasonDefs.daylight(hour)
+	var pitch := lerpf(SeasonDefs.MOON_PITCH, sun_pitch, day)
+	var yaw := lerpf(SeasonDefs.MOON_YAW, sun_yaw, day)
+	return Vector3(-deg_to_rad(pitch), deg_to_rad(yaw), 0.0)

@@ -16,7 +16,7 @@ const COLORS := {
 	WorldMap.Terrain.LAKE: Color(0.20, 0.25, 0.29),
 	WorldMap.Terrain.FOREST: Color(0.27, 0.34, 0.24),
 	WorldMap.Terrain.RUINS: Color(0.40, 0.38, 0.36),
-	WorldMap.Terrain.POISON: Color(0.52, 0.55, 0.20),
+	WorldMap.Terrain.POISON: Color(0.55, 0.48, 0.24),  # больная жёлто-бурая земля
 }
 const SNOW := Color(0.90, 0.93, 0.97)
 ## Доля «травяного» оттенка по типу клетки (летом земля зеленее).
@@ -31,18 +31,23 @@ uniform float snow_cover = 1.0;
 uniform vec3 grass_tint = vec3(1.0);
 uniform float grass_amount = 0.0;
 uniform vec3 snow_color = vec3(0.90, 0.93, 0.97);
+uniform vec3 poison_snow = vec3(0.80, 0.72, 0.46);   // грязный жёлто-бурый снег над отравой
+uniform vec3 poison_grass = vec3(1.08, 0.92, 0.62);  // летом трава там чахлая, не зелёная
 varying vec3 base;
 varying float affinity;
 varying float grass;
+varying float poison;
 void vertex() {
 	base = COLOR.rgb;
 	affinity = COLOR.a;
 	grass = UV.x;
+	poison = UV.y;
 }
 void fragment() {
 	vec3 c = mix(base, base * grass_tint, grass * grass_amount);
+	c = mix(c, base * poison_grass, poison * grass_amount);
 	float t = clamp((snow_cover - (1.0 - affinity) * 0.55) / 0.45, 0.0, 1.0);
-	ALBEDO = mix(c, snow_color, t * affinity);
+	ALBEDO = mix(c, mix(snow_color, poison_snow, poison), t * affinity);
 	ROUGHNESS = 1.0;
 }
 """
@@ -65,7 +70,7 @@ func _snow_amount(t: int, h: float, cx: int, cz: int) -> float:
 	var base := 0.55
 	match t:
 		WorldMap.Terrain.FOREST: base = 0.30
-		WorldMap.Terrain.POISON: base = 0.05
+		WorldMap.Terrain.POISON: base = 0.6  # зимой тоже под снегом (снег там жёлто-бурый, см. шейдер)
 		WorldMap.Terrain.RUINS: base = 0.35
 		WorldMap.Terrain.RIVER, WorldMap.Terrain.LAKE: return 0.0
 	return clampf(base + h * 0.02 + (map.hash01(cx, cz, 5) - 0.5) * 0.25, 0.0, 0.9)
@@ -97,7 +102,7 @@ func _build_terrain() -> void:
 				tris = [p00, p10, p01, p10, p11, p01]
 			for v: Vector3 in tris:
 				st.set_color(col)
-				st.set_uv(Vector2(grassy, 0.0))
+				st.set_uv(Vector2(grassy, 1.0 if t == WorldMap.Terrain.POISON else 0.0))
 				st.add_vertex(v)
 	terrain_vertex_count = n * n * 6
 	st.generate_normals()  # без индексов => плоское затенение
