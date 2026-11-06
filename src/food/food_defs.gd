@@ -26,10 +26,7 @@ const WORK := {
 const WORK_PICKUP := 1.5             # loading firewood for a greenhouse
 const WORK_DELIVER := 1.5
 
-# ---------- greenhouse ----------
-const GREENHOUSE_CAPACITY_FUEL := 12.0   # firewood units the stove holds
-const GREENHOUSE_FUEL_PER_DAY := 2.0     # burnt in winter only
-const GREENHOUSE_REFUEL_BELOW := 0.7     # fraction of capacity that triggers a refuel job
+# ---------- greenhouse (grows all year, no heating needed) ----------
 const GREENHOUSE_GROW_DAYS := 5.0
 const GREENHOUSE_YIELD := 6              # per batch
 const GREENHOUSE_MAX_RIPE := 12

@@ -79,7 +79,7 @@ func rebuild_fields() -> void:
 			verts.append(Vector3(x, world.height_at(x, z) + FIELD_LIFT, z))
 			norms.append(Vector3.UP)
 			cols.append(col)
-		idx.append_array(PackedInt32Array([base, base + 2, base + 1, base + 1, base + 2, base + 3]))
+		idx.append_array(PackedInt32Array([base, base + 1, base + 2, base + 1, base + 3, base + 2]))
 	if verts.is_empty():
 		_fields.mesh = null
 		return

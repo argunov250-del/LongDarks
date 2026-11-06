@@ -18,7 +18,7 @@ var fields: Dictionary = {}
 ## Wildlife regions (see _init_wildlife). Hook for step 17: land_recovery multiplies regen/return speed.
 var regions: Array[Dictionary] = []
 var bodies: Array[Dictionary] = []            # water bodies: {n, stock, cap, spots}
-var greenhouses: Dictionary = {}              # building id -> {fuel, progress, ripe, crop}
+var greenhouses: Dictionary = {}              # building id -> {progress, ripe, crop}
 var picked: Dictionary = {}                   # forest cell idx -> true (mushrooms taken this year)
 var land_recovery: float = 1.0
 ## Test hooks: force season / progress / water factor (-1 = read the real systems).
@@ -49,7 +49,7 @@ func attach(sim: Simulation) -> void:
 
 
 static func is_food_kind(kind: StringName) -> bool:
-	return kind in [&"field", &"hunt", &"fish", &"forage", &"gfuel", &"gpick"]
+	return kind in [&"field", &"hunt", &"fish", &"forage", &"gpick"]
 
 
 # ---------- season / water helpers ----------
@@ -315,7 +315,7 @@ func field_text(cell: Vector2i) -> String:
 
 func _gh(id: int) -> Dictionary:
 	if not greenhouses.has(id):
-		greenhouses[id] = {"fuel": 0.0, "progress": 0.0, "ripe": 0, "crop": &"vegetables"}
+		greenhouses[id] = {"progress": 0.0, "ripe": 0, "crop": &"vegetables"}
 	return greenhouses[id]
 
 
@@ -338,25 +338,7 @@ func set_greenhouse_crop(id: int, crop: StringName) -> void:
 
 func greenhouse_text(id: int) -> String:
 	var g := _gh(id)
-	var heat := "топится" if g["fuel"] > 0.0 else ("нужны дрова" if current_season() == SeasonDefs.WINTER else "тепло не нужно")
-	return "Теплица: %s, рост %d%%, готово %d, дрова %d/%d (%s)" % [FoodDefs.CROP_NAMES[g["crop"]].to_lower(), roundi(g["progress"] * 100.0), g["ripe"], ceili(g["fuel"]), roundi(FoodDefs.GREENHOUSE_CAPACITY_FUEL), heat]
-
-
-func greenhouse_fuel_room(id: int) -> int:
-	return maxi(0, floori(FoodDefs.GREENHOUSE_CAPACITY_FUEL - _gh(id)["fuel"]))
-
-
-func add_fuel(id: int, n: int) -> void:
-	var g := _gh(id)
-	g["fuel"] = minf(FoodDefs.GREENHOUSE_CAPACITY_FUEL, g["fuel"] + n)
-
-
-## Takes firewood from storages for a greenhouse trip; returns how many were taken.
-func take_fuel(id: int, cap: int) -> int:
-	var n := mini(mini(cap, greenhouse_fuel_room(id)), economy.total(&"firewood"))
-	if n > 0 and economy.consume({&"firewood": n}):
-		return n
-	return 0
+	return "Теплица: %s, рост %d%%, готово %d (растёт круглый год, без отопления)" % [FoodDefs.CROP_NAMES[g["crop"]].to_lower(), roundi(g["progress"] * 100.0), g["ripe"]]
 
 
 # ---------- wildlife / fish / mushrooms queries ----------
@@ -437,15 +419,11 @@ func jobs() -> Array[Dictionary]:
 				n += 1
 				if n >= FoodDefs.MUSHROOM_JOB_CAP:
 					break
-	var winter := current_season() == SeasonDefs.WINTER
 	for id in greenhouse_ids():
 		var b := construction.get_building(id)
 		var g := _gh(id)
 		if g["ripe"] > 0:
 			out.append(_job("gp:%d" % id, TaskDefs.GREENHOUSE, &"gpick", id, b.position))
-		if winter and g["fuel"] < FoodDefs.GREENHOUSE_CAPACITY_FUEL * FoodDefs.GREENHOUSE_REFUEL_BELOW \
-				and economy.total(&"firewood") > 0 and greenhouse_fuel_room(id) > 0:
-			out.append(_job("gf:%d" % id, TaskDefs.GREENHOUSE, &"gfuel", id, b.position))
 	return out
 
 
@@ -458,7 +436,7 @@ func site_pos(kind: StringName, target: int) -> Variant:
 			return regions[target]["pos"] if target >= 0 and target < regions.size() else null
 		&"fish":
 			return bodies[target / 10]["spots"][target % 10]["pos"] if target / 10 < bodies.size() else null
-		&"gfuel", &"gpick":
+		&"gpick":
 			var b := construction.get_building(target)
 			return b.position if b != null else null
 	return null
@@ -478,8 +456,6 @@ func work_need(kind: StringName, target: int) -> float:
 	match kind:
 		&"field":
 			return FoodDefs.WORK.get(field_action(target), 1.0)
-		&"gfuel":
-			return FoodDefs.WORK_PICKUP
 	return FoodDefs.WORK.get(kind, 1.0)
 
 
@@ -545,7 +521,7 @@ func tick(sim: Simulation, dt: float) -> void:
 		_last_season = season
 	var days := dt / _day_s()
 	_grow_fields(season, dt)
-	_tick_greenhouses(season, days)
+	_tick_greenhouses(days)
 	_tick_wildlife(dt, days)
 	for b in bodies:
 		b["stock"] += FoodDefs.FISH_REGEN_PER_DAY * land_recovery * maxf(b["stock"], FoodDefs.FISH_MIN_BREEDERS) * (1.0 - b["stock"] / b["cap"]) * days
@@ -586,13 +562,10 @@ func _grow_fields(season: StringName, dt: float) -> void:
 		_emit_changed()
 
 
-func _tick_greenhouses(season: StringName, days: float) -> void:
+func _tick_greenhouses(days: float) -> void:
 	for id in greenhouse_ids():
 		var g := _gh(id)
-		var cold := season == SeasonDefs.WINTER
-		if cold:
-			g["fuel"] = maxf(0.0, g["fuel"] - FoodDefs.GREENHOUSE_FUEL_PER_DAY * days)
-		if (cold and g["fuel"] <= 0.0) or g["ripe"] >= FoodDefs.GREENHOUSE_MAX_RIPE:
+		if g["ripe"] >= FoodDefs.GREENHOUSE_MAX_RIPE:
 			continue
 		g["progress"] += days / FoodDefs.GREENHOUSE_GROW_DAYS
 		if g["progress"] >= 1.0:
@@ -656,7 +629,7 @@ func save_state() -> Dictionary:
 	var gl := {}
 	for id in greenhouses:
 		var g: Dictionary = greenhouses[id]
-		gl[str(id)] = [g["fuel"], g["progress"], g["ripe"], String(g["crop"])]
+		gl[str(id)] = [0.0, g["progress"], g["ripe"], String(g["crop"])]
 	var pk := []
 	for i in picked:
 		pk.append(i)
@@ -693,7 +666,7 @@ func load_state(d: Dictionary) -> void:
 		for k in d["greenhouses"]:
 			var a: Array = d["greenhouses"][k]
 			if a.size() >= 4:
-				greenhouses[SaveManager.to_int(k, -1)] = {"fuel": float(a[0]), "progress": float(a[1]), "ripe": SaveManager.to_int(a[2], 0), "crop": StringName(String(a[3]))}
+				greenhouses[SaveManager.to_int(k, -1)] = {"progress": float(a[1]), "ripe": SaveManager.to_int(a[2], 0), "crop": StringName(String(a[3]))}
 	if d.get("picked") is Array:
 		for i in d["picked"]:
 			picked[SaveManager.to_int(i, -1)] = true

@@ -60,7 +60,7 @@ static func state_of(v: Villager, vs: VillagerSystem = null) -> Dictionary:
 			pose = POSE_STACK if phase == &"deliver" else POSE_PICKUP
 		&"water", &"extinguish":
 			pose = POSE_STACK if phase == &"deliver" else POSE_CRANK
-		&"field", &"hunt", &"fish", &"forage", &"gfuel", &"gpick":
+		&"field", &"hunt", &"fish", &"forage", &"gpick":
 			# step 16 placeholders: hoe = dig, sowing = plant, reaping/gathering = harvest; rod/bow reuse work pose
 			if phase == &"deliver":
 				pose = POSE_STACK

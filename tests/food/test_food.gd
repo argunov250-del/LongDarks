@@ -81,27 +81,17 @@ func test_plowed_count_reaches_climate() -> void:
 	assert_eq(r.climate.plowed_cells(), 2, "climate receives plowed count")
 
 
-func test_greenhouse_winter_needs_fuel() -> void:
+func test_greenhouse_grows_in_winter_without_fuel() -> void:
 	var r := FoodEnv.new(SeasonDefs.WINTER)
 	var id := r.e.add_done(&"greenhouse")
 	assert_true(id > 0)
-	r.food.tick(r.e.sim, 0.1)
 	var day := r.e.sim.clock.day_seconds()
-	for i in 12:
-		r.food.tick(r.e.sim, day)
-	assert_eq(r.food._gh(id)["ripe"], 0, "no fuel: nothing grows in winter")
-	r.food.add_fuel(id, 12)
 	for i in 6:
 		r.food.tick(r.e.sim, day)
-	assert_true(r.food._gh(id)["ripe"] > 0, "fuel: vegetables in winter")
+	assert_true(r.food._gh(id)["ripe"] > 0, "vegetables in winter, no firewood needed")
 	var out := r.food.finish(&"gpick", id)
 	assert_eq(out["res"], &"vegetables")
-	assert_true(r.food._gh(id)["fuel"] < 12.0, "fuel burnt")
-	r.food.season_override = SeasonDefs.SUMMER
-	var before: float = r.food._gh(id)["fuel"]
-	for i in 6:
-		r.food.tick(r.e.sim, day)
-	assert_almost_eq(r.food._gh(id)["fuel"], before, 0.0001, "no fuel burnt outside winter")
+	assert_true(r.food.jobs().filter(func(j): return j["kind"] == &"gfuel").is_empty(), "no fuel jobs")
 
 
 func test_hunting_overhunt_herd_leaves_then_returns() -> void:
@@ -247,7 +237,7 @@ func test_save_load_mid_season() -> void:
 	r.food.finish(&"fish", 0)
 	r.food.finish(&"forage", 1)
 	var id := r.e.add_done(&"greenhouse")
-	r.food.add_fuel(id, 5)
+	r.food.tick(r.e.sim, 1.0)
 	var data: Dictionary = JSON.parse_string(JSON.stringify(r.food.save_state()))
 	var r2 := FoodEnv.new()
 	r2.food.load_state(data)
@@ -258,7 +248,7 @@ func test_save_load_mid_season() -> void:
 	assert_almost_eq(f["growth"], r.food.field_at(cs[0])["growth"], 0.0001)
 	assert_almost_eq(r2.food.regions[0]["pop"], r.food.regions[0]["pop"], 0.0001)
 	assert_almost_eq(r2.food.bodies[0]["stock"], r.food.bodies[0]["stock"], 0.0001)
-	assert_almost_eq(r2.food._gh(id)["fuel"], 5.0, 0.0001)
+	assert_almost_eq(r2.food._gh(id)["progress"], r.food._gh(id)["progress"], 0.001)
 
 
 func test_full_storage_keeps_cargo_until_room() -> void:

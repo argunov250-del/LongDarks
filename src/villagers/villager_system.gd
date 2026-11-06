@@ -600,9 +600,6 @@ func _assign(v: Villager, job: Dictionary) -> void:
 			v.task["phase"] = &"work"
 		&"field", &"hunt", &"fish", &"forage", &"gpick":
 			v.task["phase"] = &"work"
-		&"gfuel":
-			v.task["phase"] = &"fetch"
-			v.task["src"] = _nearest_storage_with(&"firewood", v.pos)
 		&"stoke":
 			v.task["phase"] = &"fetch"  # к поленнице за охапкой, затем к печи
 	v.path.clear()
@@ -649,7 +646,7 @@ func _task_pos(v: Villager, t: Dictionary) -> Variant:
 			return construction.ruins[t["target"]]["pos"] if construction.ruins.has(t["target"]) else null
 		&"chop", &"carry", &"water", &"food", &"garden", &"stoke", &"extinguish":
 			return _haul_pos(t)
-		&"field", &"hunt", &"fish", &"forage", &"gfuel", &"gpick":
+		&"field", &"hunt", &"fish", &"forage", &"gpick":
 			return _food_pos(t)
 		&"eat", &"drink":
 			var mb := construction.get_building(t["target"])
@@ -678,7 +675,7 @@ func _task_radius(t: Dictionary) -> float:
 			return 1.7
 		&"chop", &"carry", &"water", &"food", &"garden", &"stoke", &"extinguish":
 			return _haul_radius(t)
-		&"field", &"hunt", &"fish", &"forage", &"gfuel", &"gpick":
+		&"field", &"hunt", &"fish", &"forage", &"gpick":
 			return _food_radius(t)
 		&"eat", &"drink":
 			if t["dest"] == &"home":
@@ -699,8 +696,6 @@ func _food_pos(t: Dictionary) -> Variant:
 		return null
 	match t["phase"]:
 		&"fetch", &"deliver":
-			if t["phase"] == &"deliver" and t["kind"] == &"gfuel":
-				return food.site_pos(t["kind"], t["target"])
 			var s := economy.get_storage(t["src"])
 			return s.position if s != null else hub_position()
 	return food.site_pos(t["kind"], t["target"])
@@ -709,9 +704,6 @@ func _food_pos(t: Dictionary) -> Variant:
 func _food_radius(t: Dictionary) -> float:
 	match t["phase"]:
 		&"fetch", &"deliver":
-			if t["phase"] == &"deliver" and t["kind"] == &"gfuel":
-				var b := construction.get_building(t["target"])
-				return _building_radius(b) if b != null else 1.5
 			var s := economy.get_storage(t["src"])
 			return _storage_radius(s) if s != null else 2.5
 	return food.site_radius(t["kind"]) if food != null else 1.4
@@ -734,15 +726,6 @@ func _work_food(v: Villager, t: Dictionary, dt: float) -> void:
 	t["work"] += work_rate(v, t["cat"]) * dt
 	train(v, t["cat"], dt)
 	match t["phase"]:
-		&"fetch":
-			if t["work"] >= FoodDefs.WORK_PICKUP:
-				var n := food.take_fuel(t["target"], TaskDefs.CARRY_CAPACITY)
-				if n <= 0:
-					_end_task(v)
-					return
-				t["res"] = &"firewood"
-				t["carry"] = n
-				_food_start_deliver(v, t)
 		&"work":
 			if t["work"] >= food.work_need(t["kind"], t["target"]):
 				var r := food.finish(t["kind"], t["target"])
@@ -754,15 +737,12 @@ func _work_food(v: Villager, t: Dictionary, dt: float) -> void:
 				_food_start_deliver(v, t)
 		&"deliver":
 			if t["work"] >= FoodDefs.WORK_DELIVER:
-				if t["kind"] == &"gfuel":
-					food.add_fuel(t["target"], int(t["carry"]))
-				else:
-					# storages full: keep the load and wait for room (nothing is lost)
-					var left := int(t["carry"]) - economy.deposit(t["res"], int(t["carry"]))
-					if left > 0:
-						t["carry"] = left
-						t["src"] = _nearest_storage_free(v.pos)
-						return
+				# storages full: keep the load and wait for room (nothing is lost)
+				var left := int(t["carry"]) - economy.deposit(t["res"], int(t["carry"]))
+				if left > 0:
+					t["carry"] = left
+					t["src"] = _nearest_storage_free(v.pos)
+					return
 				t["carry"] = 0
 				_end_task(v)
 
@@ -770,8 +750,7 @@ func _work_food(v: Villager, t: Dictionary, dt: float) -> void:
 func _food_start_deliver(v: Villager, t: Dictionary) -> void:
 	t["phase"] = &"deliver"
 	t["work"] = 0.0
-	if t["kind"] != &"gfuel":
-		t["src"] = _nearest_storage_free(v.pos)
+	t["src"] = _nearest_storage_free(v.pos)
 	v.path.clear()
 
 
@@ -979,7 +958,7 @@ func _work(v: Villager, t: Dictionary, dt: float) -> void:
 			_work_meal(v, t, dt)
 		&"sleep", &"warm", &"heal", &"treat", &"shelter":
 			pass  # восстановление и лечение — в NeedsSystem.tick, пока житель на месте
-		&"field", &"hunt", &"fish", &"forage", &"gfuel", &"gpick":
+		&"field", &"hunt", &"fish", &"forage", &"gpick":
 			_work_food(v, t, dt)
 		&"chop", &"carry", &"water", &"food", &"garden", &"stoke", &"extinguish":
 			t["work"] += work_rate(v, TaskDefs.CHORES) * dt
@@ -1231,8 +1210,6 @@ func task_text(v: Villager) -> String:
 			txt = "Несёт улов на склад" if t["phase"] == &"deliver" else "Ловит рыбу (%s)" % (food.fish_hint() if food != null else "?")
 		&"forage":
 			txt = "Несёт грибы на склад" if t["phase"] == &"deliver" else "Собирает грибы"
-		&"gfuel":
-			txt = "Несёт дрова в теплицу" if t["phase"] == &"deliver" else "Берёт дрова на складе"
 		&"gpick":
 			txt = "Несёт овощи на склад" if t["phase"] == &"deliver" else "Собирает урожай в теплице"
 		&"garden":
