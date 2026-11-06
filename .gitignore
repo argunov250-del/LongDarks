@@ -10,3 +10,11 @@ builds/
 *.jks
 export_credentials.cfg
 .mono/
+
+# === Claude Game Studios (local) ===
+production/session-logs/
+production/session-state/
+.scratch/
+project.local.yaml
+CLAUDE.local.md
+.claude/settings.local.json
