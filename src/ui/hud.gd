@@ -18,6 +18,8 @@ signal villager_card_requested(id: int)       # «Карточка» в спис
 const MIN_TOUCH_DP := 48.0
 const REF_SHORT_SIDE_DP := 411.0  # типичная короткая сторона телефона в dp
 const TABS: Array[String] = ["Жильё", "Производство", "Социальные", "Защита"]
+const TOOLS_TAB := 4            # вкладка «Земля»: кисти (вырубка, поле, посадка, лечение, дорога)
+const TOOLS_TITLE := "Земля"
 const SPEED_LABELS: Array[String] = ["II", "1x", "2x", "3x"]
 
 var sim: Simulation
@@ -32,6 +34,9 @@ var field_button: Button
 var plant_button: Button
 var heal_button: Button
 var road_button: Button
+var tools_tab: Button          # вкладка «Земля» с кистями
+var tool_buttons: Array[Button] = []
+var _tabs_scroll: ScrollContainer   # запасной вариант: ряд вкладок прокручивается по горизонтали
 var fell_button: Button      # режим вырубки леса (рядом с вкладками)
 var menu_button: Button      # ландшафт: кнопка меню в верхней панели
 var fab: Button              # портрет: плавающая кнопка
@@ -132,21 +137,33 @@ func select_tab(index: int) -> void:
 	_selected_tab = -1 if index == _selected_tab else index  # повторное нажатие сворачивает
 	for i in tab_buttons.size():
 		tab_buttons[i].set_pressed_no_signal(i == _selected_tab)
+	tools_tab.set_pressed_no_signal(_selected_tab == TOOLS_TAB)
 	_tab_panel.visible = _selected_tab >= 0
 	if _selected_tab >= 0:
-		_tab_title.text = TABS[_selected_tab]
+		_tab_title.text = TOOLS_TITLE if _selected_tab == TOOLS_TAB else TABS[_selected_tab]
 		_fill_tab_items(_selected_tab)
 
 
 func _fill_tab_items(tab: int) -> void:
 	for c in _tab_items.get_children():
 		_tab_items.remove_child(c)
-		c.queue_free()
+		if not tool_buttons.has(c):
+			c.queue_free()
+	if tab == TOOLS_TAB:
+		for tb in tool_buttons:
+			_tab_items.add_child(tb)
+		return
 	for id in BuildingDefs.ids_in_tab(tab):
 		var b := _mk_button(BuildingDefs.display_name(id))
 		b.custom_minimum_size = Vector2(0.0, MIN_TOUCH_DP * _dp)
 		b.pressed.connect(_on_build_item.bind(id))
 		_tab_items.add_child(b)
+
+
+## A brush tool was chosen: collapse the «Земля» tab.
+func _on_tool_pressed() -> void:
+	if _selected_tab == TOOLS_TAB:
+		select_tab(TOOLS_TAB)
 
 
 func _on_build_item(id: StringName) -> void:
@@ -288,23 +305,31 @@ func _build() -> void:
 	fell_button = _mk_button("Вырубка")
 	fell_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	fell_button.pressed.connect(func(): fell_requested.emit())
-	_tabs_row.add_child(fell_button)
 	field_button = _mk_button("Поле")
 	field_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	field_button.pressed.connect(func(): field_requested.emit())
-	_tabs_row.add_child(field_button)
 	plant_button = _mk_button("Посадить лес")
 	plant_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	plant_button.pressed.connect(func(): plant_requested.emit())
-	_tabs_row.add_child(plant_button)
 	heal_button = _mk_button("Лечить землю")
 	heal_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	heal_button.pressed.connect(func(): heal_requested.emit())
-	_tabs_row.add_child(heal_button)
 	road_button = _mk_button("Дорога")
 	road_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	road_button.pressed.connect(func(): road_requested.emit())
-	_tabs_row.add_child(road_button)
+	tools_tab = _mk_button(TOOLS_TITLE, true)
+	tools_tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tools_tab.pressed.connect(select_tab.bind(TOOLS_TAB))
+	_tabs_row.add_child(tools_tab)
+	tool_buttons = [fell_button, field_button, plant_button, heal_button, road_button]
+	_tabs_scroll = ScrollContainer.new()
+	_tabs_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_tabs_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_tabs_scroll.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tabs_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tabs_scroll.add_child(_tabs_row)
+	for tb in tool_buttons:
+		tb.pressed.connect(_on_tool_pressed)
 	_tab_panel = PanelContainer.new()
 	_tab_title = Label.new()
 	_tab_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -314,6 +339,8 @@ func _build() -> void:
 	_tab_items = HFlowContainer.new()
 	_tab_items.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tab_box.add_child(_tab_items)
+	for tb in tool_buttons:
+		_tab_items.add_child(tb)
 	_tab_panel.visible = false
 	_menu_box = _mk_box(VBoxContainer.new())
 	save_button = _mk_button("Сохранить")
@@ -384,10 +411,10 @@ func _apply_mode(new_mode: int) -> void:
 	_sheet.visible = false
 	if land:
 		_reparent_to(_tab_panel, _dock)
-		_reparent_to(_tabs_row, _dock)
+		_reparent_to(_tabs_scroll, _dock)
 		_reparent_to(_menu_box, _menu_popup)
 	else:
-		_reparent_to(_tabs_row, _sheet_box)
+		_reparent_to(_tabs_scroll, _sheet_box)
 		_reparent_to(_tab_panel, _sheet_box)
 		_reparent_to(_menu_box, _sheet_box)
 	_apply_layout()
@@ -413,10 +440,11 @@ func _apply_layout() -> void:
 	var gap := roundi(6.0 * _dp)
 	for c in [_top_row, _tabs_row, _dock, _menu_box, _sheet_box]:
 		c.add_theme_constant_override("separation", gap)
-	for b in tab_buttons + [fell_button, field_button, plant_button, heal_button, menu_button, save_button, load_button, settings_button, villagers_button, priorities_button]:
+	for b in tab_buttons + tool_buttons + [tools_tab, menu_button, save_button, load_button, settings_button, villagers_button, priorities_button]:
 		b.custom_minimum_size = Vector2(0.0, touch)
 	for b in speed_buttons:
 		b.custom_minimum_size = Vector2(touch if land else touch * 0.85, touch)
+	_tabs_scroll.custom_minimum_size.y = touch + 2.0 * _dp
 	var fs := touch * 1.3
 	fab.custom_minimum_size = Vector2(fs, fs)
 
@@ -480,7 +508,13 @@ func _apply_layout() -> void:
 
 
 ## Размер вьюпорта; вне дерева (тесты) — типичный портретный экран.
+## Test hook: non-zero forces the layout viewport size.
+var viewport_override := Vector2.ZERO
+
+
 func _vp_size() -> Vector2:
+	if viewport_override != Vector2.ZERO:
+		return viewport_override
 	return get_viewport().get_visible_rect().size if is_inside_tree() else Vector2(1080, 2400)
 
 

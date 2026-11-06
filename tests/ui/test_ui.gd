@@ -84,3 +84,30 @@ func test_modes_reparent_same_actions() -> void:
 	assert_eq(hud.tab_buttons.size(), 4)
 	assert_true(hud.tab_buttons[0].custom_minimum_size.y >= 48.0)
 	hud.free()
+
+
+func test_tools_tab_all_actions_reachable_and_fit() -> void:
+	var seen: Array = []
+	var hud := _make_hud()
+	for size in [Vector2i(1280, 720), Vector2i(2400, 1080), Vector2i(1080, 2400)]:
+		hud.viewport_override = Vector2(size)
+		hud.layout.update_size(Vector2(size))
+		hud._apply_mode(LayoutMode.decide(Vector2(size)))
+		hud._apply_layout()
+		var w := float(size.x)
+		assert_eq(hud.tool_buttons.size(), 5, "five brush tools")
+		hud.tools_tab.pressed.emit()
+		for tb in hud.tool_buttons:
+			assert_true(tb.get_parent() == hud._tab_items, "tool %s reachable in %s" % [tb.text, str(size)])
+			assert_true(tb.get_combined_minimum_size().x <= w, "tool button %s fits %s" % [tb.text, str(size)])
+		var row := 0.0
+		for b in hud.tab_buttons + [hud.tools_tab]:
+			assert_true(b.get_combined_minimum_size().x <= w, "tab %s fits" % b.text)
+			row += b.get_combined_minimum_size().x
+		if size.x > size.y:
+			assert_true(row <= w, "landscape tab row fits without scrolling %s: %f" % [str(size), row])
+		assert_eq(hud._tabs_scroll.horizontal_scroll_mode, ScrollContainer.SCROLL_MODE_AUTO, "scroll fallback")
+		assert_true(hud._tabs_scroll.get_parent() != null)
+		seen.append(size)
+	assert_eq(seen.size(), 3)
+	hud.free()

@@ -283,3 +283,11 @@ func test_view_meshes_and_three_layers() -> void:
 	view.rebuild_trails()
 	assert_eq(view.layer_counts, {"foot": 1, "ruts": 1, "roads": 1}, "three separate layers drawn")
 	view.free()
+
+
+func test_rut_look_in_mud_and_snow() -> void:
+	var dry := VehiclesView.rut_color(1.0, 0.0, 0.0)
+	var mud := VehiclesView.rut_color(1.0, 1.0, 0.0)
+	var snow := VehiclesView.rut_color(1.0, 0.0, 1.0)
+	assert_true(mud.get_luminance() < dry.get_luminance(), "mud ruts deeper/darker")
+	assert_true(snow.get_luminance() > dry.get_luminance() * 3.0, "packed track in snow is light")

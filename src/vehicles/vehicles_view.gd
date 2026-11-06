@@ -188,6 +188,13 @@ func _h(x: float, z: float) -> float:
 	return world.height_at(x, z) + 0.07
 
 
+## Wheel-track colour: dry dark earth, deeper/darker in mud, packed light track in snow.
+static func rut_color(lv: float, mud: float, snow: float) -> Color:
+	if snow > 0.5:
+		return Color(0.78, 0.82, 0.88, 0.5 + 0.4 * lv)
+	return Color(0.14, 0.10, 0.07, 0.35 + 0.55 * lv).lerp(Color(0.06, 0.04, 0.03, 0.95), mud * 0.7)
+
+
 func rebuild_trails() -> void:
 	var tm := vs.trails
 	var verts := PackedVector3Array()
@@ -233,11 +240,9 @@ func rebuild_trails() -> void:
 		if not (tm.ruts.has(i + 1) or tm.ruts.has(i - 1)) and (tm.ruts.has(i + world.size) or tm.ruts.has(i - world.size)):
 			ax = 0.0
 			az = 1.0
-		var col := Color(0.14, 0.10, 0.07, 0.35 + 0.55 * lv).lerp(Color(0.06, 0.04, 0.03, 0.9), mud * 0.7)
-		if snow > 0.5:
-			col = Color(0.78, 0.82, 0.88, 0.5 + 0.4 * lv)
+		var col := rut_color(lv, mud, snow)
 		for side in [-1.0, 1.0]:
-			quad.call(c.x - az * side * 0.45, c.z + ax * side * 0.45, ax, az, cs * 0.5, 0.24, col)
+			quad.call(c.x - az * side * 0.45, c.z + ax * side * 0.45, ax, az, cs * 0.5, 0.24 + 0.12 * mud, col)
 		layer_counts["ruts"] += 1
 	if verts.is_empty():
 		_overlay.mesh = null
