@@ -138,6 +138,13 @@ func apply_to_seasons() -> void:
 			seasons.set_duration_minutes(s, m)
 
 
+## Первая весна игры: прилетают первые птицы (один раз, независимо от потепления).
+func tick(_sim_in: Simulation, _dt: float) -> void:
+	if not _first_birds and seasons != null and seasons.season() == SeasonDefs.SPRING:
+		_first_birds = true
+		_emit(TOPIC_FIRST_BIRDS, {"year": seasons.year(), "warming": _warming})
+
+
 func _on_season_changed(_p: Dictionary) -> void:
 	advance_season()
 
@@ -151,9 +158,6 @@ func advance_season() -> void:
 
 func _check_milestones() -> void:
 	var year := seasons.year() if seasons != null else 1
-	if not _first_birds and _warming >= ClimateDefs.FIRST_BIRDS_WARMING:
-		_first_birds = true
-		_emit(TOPIC_FIRST_BIRDS, {"year": year, "warming": _warming})
 	while _milestones_done < ClimateDefs.MILESTONES.size() and _warming >= ClimateDefs.MILESTONES[_milestones_done] - 0.00001:
 		_emit(TOPIC_WARMING_MILESTONE, {"level": ClimateDefs.MILESTONES[_milestones_done], "warming": _warming, "year": year})
 		_milestones_done += 1

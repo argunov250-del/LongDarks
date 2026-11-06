@@ -90,17 +90,17 @@ func test_milestones_emit_once() -> void:
 	assert_eq(e.count(ClimateSystem.TOPIC_WARMING_MILESTONE), ClimateDefs.MILESTONES.size())
 
 
-func test_first_birds_after_threshold_and_bird_count() -> void:
+func test_first_birds_in_first_spring_and_bird_count() -> void:
 	var e := CEnv.new()
 	assert_eq(e.climate.bird_count(), 0)
-	e.run_years(1.0)
-	assert_eq(e.count(ClimateSystem.TOPIC_FIRST_BIRDS), 0, "0.3 C is too early")
-	e.run_years(1.5)
-	assert_eq(e.count(ClimateSystem.TOPIC_FIRST_BIRDS), 1)
+	e.run(10.0)  # старт в начале весны: первая весна игры
+	assert_eq(e.count(ClimateSystem.TOPIC_FIRST_BIRDS), 1, "first_birds in the first spring")
+	assert_true(e.climate.warming() < 0.1, "regardless of warming")
 	var n1 := e.climate.bird_count()
 	assert_true(n1 >= ClimateDefs.BIRDS_MIN)
 	e.climate.set_plowed_cells(100000)
 	e.run_years(30.0)
+	assert_eq(e.count(ClimateSystem.TOPIC_FIRST_BIRDS), 1, "only once")
 	assert_true(e.climate.bird_count() > n1, "more birds as it warms")
 	assert_true(e.climate.bird_count() <= ClimateDefs.BIRDS_MAX)
 

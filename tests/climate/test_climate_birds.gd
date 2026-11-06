@@ -16,8 +16,7 @@ func test_birds_only_in_spring_after_first_birds() -> void:
 	var b := _birds(e)
 	e.seasons.start_at(SeasonDefs.SPRING, 0.5)
 	assert_eq(b.target_count(), 0, "no birds before the milestone")
-	for i in 8:
-		e.climate.advance_season()
+	e.climate.tick(e.sim, 0.1)
 	assert_true(e.climate.first_birds_seen())
 	e.seasons.start_at(SeasonDefs.SPRING, 0.5)
 	assert_true(b.target_count() > 0, "birds in spring")
