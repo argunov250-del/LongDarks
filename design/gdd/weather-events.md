@@ -61,6 +61,12 @@ Challenge + Discovery: «Пёс заскулил — значит, пора го
 | IGNITE_CHANCE | 0.35 | curve | 0.1-0.6 |
 | BURN_TIME / SPREAD_CHANCE / MAX_BURN_CELLS | 60 с / 0.1 за 10 с / 10 | curve | пожар ограничен, не съедает лес |
 | BURN_FERTILITY | +0.5 (урожай 8 -> 12) | curve | 0.25-1.0 |
+| BUILDING_FIRE_REACH / BUILDING_IGNITE_CHANCE / BUILDING_BURN_TIME | 3 м / 0.3 за 10 с / 90 с | curve | дальность до здания от горящей клетки |
+| FOREST_FIRE_WATER / BUILDING_FIRE_WATER | 6 / 18 ед. воды | curve | 1 и 3 ходки с вёдрами |
+| REPAIR_COST_FRACTION / REPAIR_WORK_FRACTION | 0.25 / 0.35 | curve | ремонт после пожара |
+| FERTILITY_LIFETIME_YEARS | 1 | curve | затухание бонуса |
+| DROUGHT well / dry | x2.5 / 0.3 | curve | вёдра дольше / неполитая грядка сохнет |
+| NO_EVENTS_FIRST_DAYS | 2 | gate | |
 | FLOOD_REACH_CELLS / FLOOD_HEIGHT | 3 клетки / 1.5 м | curve | 2-5 / 1-2.5 |
 | FLOOD_RISE / FLOOD_RECEDE | 1 / 2 мин | feel | |
 
