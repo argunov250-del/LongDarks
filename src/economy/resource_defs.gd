@@ -5,9 +5,9 @@ extends RefCounted
 enum Category { RAW, FOOD, FUEL, PART, WATER }
 
 ## Плейсхолдеры баланса: доля запаса, портящаяся за игровые сутки.
-const SPOIL_PER_DAY_FRESH := 0.30   # молоко, яйца, мясо, рыба
-const SPOIL_PER_DAY_MEDIUM := 0.10  # грибы
-const SPOIL_PER_DAY_SLOW := 0.02    # зерно, картофель, рапс
+const SPOIL_PER_DAY_FRESH := 0.10   # молоко, яйца, мясо, рыба
+const SPOIL_PER_DAY_MEDIUM := 0.033  # грибы
+const SPOIL_PER_DAY_SLOW := 0.007   # зерно, картофель, рапс
 
 const _DEFS := {
 	# сырьё

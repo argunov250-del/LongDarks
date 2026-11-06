@@ -7,7 +7,6 @@ const SLOT := "__test_needs"
 func _fresh() -> Env:
 	var e := Env.new(5000, {}, 5)
 	e.sim.clock.set_day_length(400.0)
-	e.sim.clock.set_rate_day_length(400.0)
 	e.enable_needs(10.0)
 	return e
 
@@ -65,7 +64,7 @@ func test_death_is_saved_consistently() -> void:
 	var v := e.add_villager(&"builder")
 	e.vs.needs.fall_sick(v)
 	v.set_need(NeedsDefs.HEALTH, 0.01)
-	e.run(30.0)
+	e.run(90.0)  # скорости «в сутки» втрое ниже с шага 13
 	assert_true(e.vs.get_villager(v.id) == null)
 	var n := e.vs.population()
 	assert_eq(SaveManager.save(e.sim, SLOT), OK)

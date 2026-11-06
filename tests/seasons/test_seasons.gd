@@ -3,13 +3,31 @@ extends "res://tests/test_case.gd"
 const SEnv = preload("res://tests/seasons/season_env.gd")
 
 
-func test_day_length_is_150_seconds() -> void:
-	assert_eq(GameClock.DEFAULT_DAY_LENGTH, 150.0)
+func test_day_length_is_8_minutes() -> void:
+	assert_eq(GameClock.DEFAULT_DAY_LENGTH, 480.0)
 	var c := GameClock.new()
-	c.set_total_seconds(150.0)
-	assert_eq(c.get_day(), 2, "one game day = 150 s at 1x")
-	# скорости «в сутки» привязаны к отдельным «суткам скоростей» — баланс не изменился
-	assert_eq(c.rate_day_seconds(), GameClock.RATE_DAY_LENGTH)
+	c.set_total_seconds(480.0)
+	assert_eq(c.get_day(), 2, "one game day = 8 min at 1x")
+
+
+## Все скорости «в сутки» — от одних игровых суток: житель ест и пьёт примерно раз в сутки.
+func test_villager_eats_and_drinks_about_once_a_day() -> void:
+	var e := SEnv.new()
+	e.at(SeasonDefs.SUMMER, 0.3, 8.0)  # тепло: без зимнего множителя
+	e.vs.needs_enabled = true
+	var v := e.add_villager(&"cook")
+	v.set_need(NeedsDefs.FOOD, NeedsDefs.MEAL_FULL)
+	v.set_need(NeedsDefs.WATER, NeedsDefs.MEAL_FULL)
+	var day := e.sim.clock.day_seconds()
+	var food_drop := NeedsDefs.FOOD_DECAY_PER_DAY * e.vs.consumption_multiplier()
+	var water_drop := NeedsDefs.WATER_DECAY_PER_DAY * e.vs.consumption_multiplier()
+	var gap := NeedsDefs.MEAL_FULL - NeedsDefs.EAT_BELOW
+	assert_true(gap / food_drop >= 0.6 and gap / food_drop <= 1.2, "meal every ~day: %.2f days" % (gap / food_drop))
+	assert_true(gap / water_drop >= 0.5 and gap / water_drop <= 1.0, "drink every ~day: %.2f days" % (gap / water_drop))
+	# убыль за реальное время совпадает с «за сутки» (днём, без сна: множитель 1)
+	var f0 := v.need(NeedsDefs.FOOD)
+	e.run(day * 0.1)
+	assert_almost_eq(f0 - v.need(NeedsDefs.FOOD), food_drop * 0.1, 0.01, "food per game day")
 
 
 func test_season_order_and_durations() -> void:
@@ -49,8 +67,8 @@ func test_day_of_season_and_progress() -> void:
 	assert_eq(e.seasons.day_of_season(), 1)
 	e.seasons.start_at(SeasonDefs.SPRING, 0.5)
 	assert_almost_eq(e.seasons.progress(), 0.5, 0.001)
-	assert_eq(e.seasons.day_of_season(), int(25.0 * 60.0 * 0.5 / 150.0) + 1, "day 6 of spring")
-	assert_eq(e.seasons.days_in_season(SeasonDefs.WINTER), 12)
+	assert_eq(e.seasons.day_of_season(), int(25.0 * 60.0 * 0.5 / GameClock.DEFAULT_DAY_LENGTH) + 1, "day 2 of spring")
+	assert_eq(e.seasons.days_in_season(SeasonDefs.WINTER), 4, "winter ~ 3.75 days of 8 min")
 
 
 func test_durations_configurable_hook() -> void:
@@ -121,8 +139,8 @@ func test_temperature_continuity_and_determinism() -> void:
 					samples.append(t)
 		return [max_step, samples]
 	var a: Array = run.call()
-	# предел — крутизна суточного хода (5.5 °C · 2π / 150 с ≈ 0.23 °C/с) + шум; скачков нет
-	assert_true(a[0] < 0.4, "max change per game second %.3f" % a[0])
+	# предел — крутизна суточного хода (5.5 °C · 2π / 480 с ≈ 0.07 °C/с) + шум; скачков нет
+	assert_true(a[0] < 0.15, "max change per game second %.3f" % a[0])
 	var b: Array = run.call()
 	assert_eq(a[1], b[1], "deterministic")
 

@@ -1,7 +1,7 @@
 extends "res://tests/test_case.gd"
 
 const SEED := 12345
-const DAY := 1440.0
+const DAY := GameClock.DEFAULT_DAY_LENGTH
 
 
 func _eco() -> EconomySystem:
@@ -69,9 +69,9 @@ func test_fractional_spoilage_deterministic() -> void:
 	var run := func() -> int:
 		var e := _eco()
 		var s := e.add_storage(Storage.new(1000))
-		s.add(&"potato", 10)  # 2%/сутки: 0.2 ед/сутки
+		s.add(&"potato", 10)  # 0.7%/сутки: 0.07 ед/сутки
 		var sim := Simulation.new(1)
-		for _i in 1440:
+		for _i in int(DAY):
 			e.tick(sim, 1.0)  # одни сутки мелкими шагами
 		return s.amount(&"potato")
 	assert_eq(run.call(), run.call())
@@ -80,8 +80,10 @@ func test_fractional_spoilage_deterministic() -> void:
 	var s := e.add_storage(Storage.new(1000))
 	s.add(&"potato", 10)
 	var sim := Simulation.new(1)
-	for _i in 5:
+	for _i in 14:
 		e.tick(sim, DAY)
+	assert_eq(s.amount(&"potato"), 10, "0.98 accumulated: not yet")
+	e.tick(sim, DAY)
 	assert_eq(s.amount(&"potato"), 9, "accumulated fraction crosses 1")
 
 

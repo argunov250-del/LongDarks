@@ -2,9 +2,9 @@ class_name NeedsDefs
 extends RefCounted
 ## Физические потребности жителей (шаг 11): ВЕСЬ баланс (плейсхолдеры) — одно место.
 ## Потребность 0..1 (1 — всё хорошо): еда, вода, тепло, отдых, здоровье.
-## Скорости «в сутки»: расход (еда, вода, тепло, здоровье, болезни, дрова) — за «сутки скоростей»
-## GameClock.rate_day_usec (1440 с, не зависят от длины суток цикла); сон и усталость — за сутки
-## цикла GameClock.day_length_usec (150 с), чтобы ночь восстанавливала отдых.
+## Скорости заданы «за игровые сутки» (GameClock.day_length_usec, 480 с при 1x). Шаг 13: сутки
+## сократились с 1440 до 480 с — расходные скорости пересчитаны (x1/3), чтобы темп в реальном времени
+## остался прежним; еда и вода — так, чтобы житель ел и пил примерно раз в игровые сутки.
 ##
 ## ХУКИ:
 ##  - сезоны/погода (шаг 13, SeasonSystem): outdoor_cold из температуры, consumption_multiplier зимой выше;
@@ -34,12 +34,12 @@ const HOME_REACH_RADIUS := 1.6     # подойти к двери, чтобы п
 const HOME_ASSIGN_INTERVAL := 1.0  # как часто пересматривать расселение, игр. с
 
 # ---------- убыль (за сутки при множителе 1) ----------
-const FOOD_DECAY_PER_DAY := 1.2
-const WATER_DECAY_PER_DAY := 1.8
+const FOOD_DECAY_PER_DAY := 0.6     # ~1 трапеза в сутки (0.45 -> 0.9)
+const WATER_DECAY_PER_DAY := 0.75   # пьют чуть чаще, чем едят
 const REST_DECAY_WORK := 1.0       # устают на работе (на объекте)
 const REST_DECAY_IDLE := 0.6       # в пути и без дела
 const SLEEP_DECAY_MULT := 0.5      # во сне еда и вода убывают медленнее
-const SLEEP_RESTORE_PER_DAY := 3.0 # сон дома (8 ч ≈ +1.0), за сутки цикла
+const SLEEP_RESTORE_PER_DAY := 3.0 # сон дома (8 ч ≈ +1.0)
 const HOMELESS_REST_MULT := 0.4    # сон без дома восстанавливает хуже
 const HOMELESS_WARMTH_PENALTY := 0.1  # без дома теплее некуда: сквозняк и сырость
 
@@ -66,14 +66,14 @@ const OUTDOOR_WARMTH_FACTOR := 0.7 # тепло на улице = (1 - холо�
 const SHELTER := {&"dugout": 0.10, &"izba": 0.25, &"stone_house": 0.40}  # доля «до 1», что даёт крыша без печи
 const PUBLIC_SHELTER := 0.20       # столовая/больница (без отопления; ХУК: печи общественных зданий)
 const STOVE_HEAT := 0.6            # прибавка тепла дома от горящей печи
-const HOUSE_HEAT_PER_DAY := 8.0    # дом прогревается, ед./сутки
-const HOUSE_COOL_PER_DAY := 4.0    # и остывает
-const WARMTH_RATE_PER_DAY := 4.0   # житель подстраивается под среду
+const HOUSE_HEAT_PER_DAY := 2.7    # дом прогревается, ед./сутки
+const HOUSE_COOL_PER_DAY := 1.3    # и остывает
+const WARMTH_RATE_PER_DAY := 1.3   # житель подстраивается под среду
 const WARM_BELOW := 0.3            # пора домой греться
 const WARM_DONE := 0.6
 const COLD_WARNING := 0.35
 const STOKE_BELOW := 1               # житель идёт топить, когда в печи не больше стольких дров
-const BURN_LOGS_PER_DAY := 5.0     # дров в сутки горит печь при множителе 1
+const BURN_LOGS_PER_DAY := 1.7     # дров в сутки горит печь при множителе 1
 const HEAT_MIN_COLD := 0.02        # ниже — тепло не нужно (хук wants_heat)
 
 # ---------- сон ----------
@@ -85,14 +85,14 @@ const NIGHT_SHIFT_MIN_REST := 0.3  # врач на дежурстве у пац�
 
 # ---------- здоровье и болезни ----------
 const CRITICAL_NEED := 0.12        # ниже — начинает вредить здоровью
-const STARVE_DRAIN_PER_DAY := 0.6  # за каждую критичную потребность (при нуле)
-const HEALTH_REGEN_PER_DAY := 0.25 # когда всё в порядке
+const STARVE_DRAIN_PER_DAY := 0.2  # за каждую критичную потребность (при нуле)
+const HEALTH_REGEN_PER_DAY := 0.083 # когда всё в порядке
 const REGEN_NEEDS_MIN := 0.35
-const SICK_BASE_PER_DAY := 0.03    # шанс заболеть в сутки при сытой жизни
-const SICK_NEED_WEIGHT := 1.0      # + сумма ((FLOOR-потребность)/FLOOR)^2 по базовым потребностям
+const SICK_BASE_PER_DAY := 0.01    # шанс заболеть в сутки при сытой жизни
+const SICK_NEED_WEIGHT := 0.33      # + сумма ((FLOOR-потребность)/FLOOR)^2 по базовым потребностям
 const SICK_NEED_FLOOR := 0.5       # выше этого уровня потребность на болезнь не влияет
 const SICK_ROLL_INTERVAL := 20.0   # как часто бросать кубик, игр. с
-const SICK_DRAIN_PER_DAY := 0.4    # без лечения здоровье падает
+const SICK_DRAIN_PER_DAY := 0.13    # без лечения здоровье падает
 const SICK_START_HEALTH_CAP := 0.85
 const RECOVER_HEALTH := 0.85       # здоров, когда здоровье снова не ниже
 const HERO_HEALTH_FLOOR := 0.05    # герой не умирает
@@ -101,7 +101,7 @@ const HERO_HEALTH_FLOOR := 0.05    # герой не умирает
 const HOSPITAL_BEDS := 4
 const HOSPITAL_STAFF_SLOTS := 2
 const TREAT_PRIORITY := 3
-const HEAL_PER_DAY := 2.0          # лечение врачом, здоровье/сутки на пациента
+const HEAL_PER_DAY := 0.67          # лечение врачом, здоровье/сутки на пациента
 const NONDOCTOR_HEAL_MULT := 0.5   # если врача в посёлке нет, лечит любой, хуже
 const HEAL_BED_REST_PER_DAY := 0.0 # койка без персонала не лечит
 

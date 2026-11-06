@@ -328,7 +328,7 @@ func tick(sim: Simulation, dt: float) -> void:
 		return
 	sync()
 	var season := current_season()
-	var days := dt / sim.clock.rate_day_seconds()
+	var days := dt / sim.clock.day_seconds()
 	var cold_store := economy != null and economy.ambient_cold  # на холоде еда не портится
 	for id in homes:
 		var h: Household = homes[id]

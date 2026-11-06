@@ -3,11 +3,11 @@ extends "res://tests/test_case.gd"
 const Env = preload("res://tests/villagers/villager_env.gd")
 
 
-## Стенд: потребности включены, сутки 400 с (быстрее), день.
+## Стенд: потребности включены, сутки 400 с (быстрее 480 с), день. Шаг 13: скорости «в сутки»
+## уменьшены втрое (сутки игры 480 вместо 1440 с) — длительности тестов умножены на 3.
 func _env(hour: float = 10.0, day_len: float = 400.0) -> Env:
 	var e := Env.new(5000, {})
 	e.sim.clock.set_day_length(day_len)
-	e.sim.clock.set_rate_day_length(day_len)
 	e.enable_needs(hour)
 	return e
 
@@ -137,11 +137,11 @@ func test_stove_burns_firewood_and_keeps_house_warm() -> void:
 	var v := _villager(e)
 	e.vs.needs.assign_homes()
 	v.set_need(NeedsDefs.WARMTH, 0.2)
-	e.run(30.0)
+	e.run(90.0)
 	assert_true(h.stove < 4, "stove burned firewood")
 	assert_true(h.lit(), "stove burning")
 	assert_true(h.warmth > 0.6, "house warm: %f" % h.warmth)
-	e.run(30.0)
+	e.run(90.0)
 	assert_true(v.need(NeedsDefs.WARMTH) > 0.5, "villager warmed at home: %f" % v.need(NeedsDefs.WARMTH))
 	assert_false(NeedsDefs.warnings(v.needs, v.sick).has(NeedsDefs.WARMTH))
 
@@ -241,7 +241,6 @@ func test_homeless_sleep_is_worse_and_tiredness_grows_while_working() -> void:
 	# усталость на работе
 	var e3 := Env.new(5000, {&"logs": 40, &"planks": 40, &"stone": 40})
 	e3.sim.clock.set_day_length(400.0)
-	e3.sim.clock.set_rate_day_length(400.0)
 	e3.enable_needs(9.0)
 	var b := e3.place_near_hub(&"dugout", 8.0, 0.0)
 	var w := e3.hero()
@@ -294,7 +293,7 @@ func test_sick_villager_stops_working_and_goes_to_hospital_with_doctor() -> void
 	assert_eq(pat.task.get("target"), hid)
 	assert_eq(doc.task.get("kind"), &"treat", "doctor treats")
 	assert_true(e.vs.get_hero().task.get("kind", &"") != &"treat", "hero does not take the doctor's job")
-	e.run(130.0)
+	e.run(390.0)
 	assert_false(pat.sick, "healed")
 	assert_true(pat.need(NeedsDefs.HEALTH) >= NeedsDefs.RECOVER_HEALTH)
 	assert_true(events.has(["ok", pat.id]), "recovery event")
@@ -312,9 +311,9 @@ func test_sick_without_treatment_loses_health_and_dies() -> void:
 	e.run(20.0)
 	assert_true(v.task.get("kind", &"") != &"build", "sick villager does not work")
 	var h1 := v.need(NeedsDefs.HEALTH)
-	e.run(40.0)
+	e.run(120.0)
 	assert_true(v.need(NeedsDefs.HEALTH) < h1, "health keeps dropping")
-	e.run(150.0)
+	e.run(450.0)
 	assert_true(e.vs.get_villager(v.id) == null, "dead and gone")
 	assert_eq(deaths.size(), 1, "death event once")
 	assert_eq(deaths[0]["id"], v.id)
@@ -335,7 +334,7 @@ func test_starvation_kills_and_frees_home() -> void:
 	v.set_need(NeedsDefs.HEALTH, 0.4)
 	var died := []
 	e.sim.bus.subscribe(VillagerSystem.TOPIC_DIED, func(p): died.append(p["cause"]))
-	e.run(250.0)
+	e.run(750.0)
 	assert_true(e.vs.get_villager(v.id) == null, "died of thirst/hunger")
 	assert_eq(died.size(), 1)
 	assert_true(died[0] == &"water" or died[0] == &"food" or died[0] == &"sickness")

@@ -95,7 +95,7 @@ func tick(sim: Simulation, dt: float) -> void:
 	_sim = sim
 	if ambient_cold or dt <= 0.0:
 		return
-	var days := dt / sim.clock.rate_day_seconds()
+	var days := dt / sim.clock.day_seconds()
 	var any := false
 	for s in storages:
 		if not s.spoil(days).is_empty():
