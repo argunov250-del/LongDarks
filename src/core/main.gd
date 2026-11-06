@@ -11,6 +11,8 @@ var climate: ClimateSystem
 var climate_birds: ClimateBirds
 var food: FoodSystem
 var food_view: FoodView
+var restoration: RestorationSystem
+var restoration_view: RestorationView
 var season_visuals: SeasonVisuals
 var world_view: WorldView
 var economy: EconomySystem
@@ -56,6 +58,10 @@ func _ready() -> void:
 	food.attach(SimRunner.sim)
 	food.bind(economy, world_map, construction, seasons, weather, climate)
 	villagers.food = food
+	restoration = RestorationSystem.new()
+	SimRunner.sim.register_system(restoration)
+	restoration.attach(SimRunner.sim)
+	restoration.bind(economy, world_map, construction, food, climate, seasons)
 	world_view = WorldView.new()
 	world_view.name = "World"
 	add_child(world_view)
@@ -90,6 +96,10 @@ func _ready() -> void:
 	food_view.name = "FoodView"
 	add_child(food_view)
 	food_view.setup(food, world_map, SimRunner.sim)
+	restoration_view = RestorationView.new()
+	restoration_view.name = "RestorationView"
+	add_child(restoration_view)
+	restoration_view.setup(restoration, world_map, economy.deposits, world_view, SimRunner.sim)
 	var rig: CameraRig = $CameraRig
 	rig.setup(world_map, $CameraRig/Camera3D)
 	SimRunner.sim.register_system(rig.save_system)
@@ -101,4 +111,5 @@ func _ready() -> void:
 	build_controller.villagers = villagers
 	build_controller.villagers_view = villagers_view
 	build_controller.food = food
+	build_controller.restoration = restoration
 	print("LongDarks: main scene ready, world %dx%d, terrain verts %d" % [world_map.size, world_map.size, world_view.terrain_vertex_count])

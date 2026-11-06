@@ -54,6 +54,7 @@ void fragment() {
 
 var terrain_material: ShaderMaterial
 var _tree_mat: StandardMaterial3D
+var _water_mat: StandardMaterial3D
 var _tree_sm: ShaderMaterial        # деревья качаются на ветру (uniform sway, шаг 14)
 const TREE_SHADER := """
 shader_type spatial;
@@ -169,7 +170,15 @@ func _build_water() -> void:
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.roughness = 0.25
 	mi.material_override = mat
+	_water_mat = mat
 	add_child(mi)
+
+
+## Чистота воды 0..1 (шаг 17): грязная — мутная жёлто-бурая, чистая — прозрачно-голубая.
+func set_water_clarity(c: float) -> void:
+	if _water_mat != null:
+		var k := clampf(c, 0.0, 1.0)
+		_water_mat.albedo_color = Color(0.36, 0.38, 0.30, 0.92).lerp(Color(0.22, 0.48, 0.62, 0.78), k)
 
 
 func _make_multimesh(node_name: String, mesh: Mesh, color: Color, xforms: Array[Transform3D]) -> StandardMaterial3D:

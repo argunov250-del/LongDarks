@@ -8,6 +8,8 @@ extends Control
 
 signal build_selected(type_id: StringName)   # выбрано здание во вкладке строительства
 signal field_requested                        # «Поле» (шаг 16): кисть полей с выбором культуры
+signal plant_requested                        # «Посадить лес» (шаг 17)
+signal heal_requested                         # «Лечить землю» (шаг 17)
 signal fell_requested                         # кнопка «Вырубка» во вкладках строительства
 signal action_pressed(id: StringName)         # кнопка панели действий (размещение/здание/руина)
 signal villager_card_requested(id: int)       # «Карточка» в списке жителей
@@ -26,6 +28,8 @@ var time_label: Label
 var speed_buttons: Array[Button] = []
 var tab_buttons: Array[Button] = []
 var field_button: Button
+var plant_button: Button
+var heal_button: Button
 var fell_button: Button      # режим вырубки леса (рядом с вкладками)
 var menu_button: Button      # ландшафт: кнопка меню в верхней панели
 var fab: Button              # портрет: плавающая кнопка
@@ -287,6 +291,14 @@ func _build() -> void:
 	field_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	field_button.pressed.connect(func(): field_requested.emit())
 	_tabs_row.add_child(field_button)
+	plant_button = _mk_button("Посадить лес")
+	plant_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	plant_button.pressed.connect(func(): plant_requested.emit())
+	_tabs_row.add_child(plant_button)
+	heal_button = _mk_button("Лечить землю")
+	heal_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	heal_button.pressed.connect(func(): heal_requested.emit())
+	_tabs_row.add_child(heal_button)
 	_tab_panel = PanelContainer.new()
 	_tab_title = Label.new()
 	_tab_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -395,7 +407,7 @@ func _apply_layout() -> void:
 	var gap := roundi(6.0 * _dp)
 	for c in [_top_row, _tabs_row, _dock, _menu_box, _sheet_box]:
 		c.add_theme_constant_override("separation", gap)
-	for b in tab_buttons + [fell_button, field_button, menu_button, save_button, load_button, settings_button, villagers_button, priorities_button]:
+	for b in tab_buttons + [fell_button, field_button, plant_button, heal_button, menu_button, save_button, load_button, settings_button, villagers_button, priorities_button]:
 		b.custom_minimum_size = Vector2(0.0, touch)
 	for b in speed_buttons:
 		b.custom_minimum_size = Vector2(touch if land else touch * 0.85, touch)

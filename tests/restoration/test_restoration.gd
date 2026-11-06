@@ -268,3 +268,21 @@ func test_crop_view_stages() -> void:
 	view.rebuild_crops()
 	assert_true(view.crop_count() > 0, "ripe field shows plants")
 	view.free()
+
+
+func test_restoration_view_draws_saplings_and_poison_fade() -> void:
+	var r := RestEnv.new()
+	var cs := r.free_cells(2)
+	r.rs.designate_plant([cs[0]])
+	r.rs.finish(&"plant", r.idx(cs[0]))
+	var v := RestorationView.new()
+	v.setup(r.rs, r.world, r.e.eco.deposits, null, r.e.sim)
+	v.rebuild()
+	assert_eq(v.plant_count, 1, "sapling drawn")
+	var pc := r.poison_cell()
+	r.rs.designate_heal([pc])
+	r.rs.finish(&"heal_land", r.idx(pc))
+	v.rebuild()
+	assert_true(v.plant_count > 1, "cleansing vegetation drawn")
+	assert_true(RestorationView.poison_color(1.0) != RestorationView.poison_color(0.0), "colour fades with poison")
+	v.free()

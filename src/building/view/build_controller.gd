@@ -45,6 +45,9 @@ var selected_villager := -1
 var restore_menu := false
 var felling_mode := false
 var field_mode := false          # кисть полей (шаг 16): тот же режим кисти, цель — разметка поля
+var plant_mode := false          # шаг 17: кисть «Посадить лес»
+var heal_mode := false           # шаг 17: кисть «Лечить землю»
+var restoration: RestorationSystem
 var field_crop: StringName = &"grain"
 var food: FoodSystem
 var brush_radius := 6.0
@@ -75,6 +78,8 @@ func setup(construction: ConstructionSystem, cam: Camera3D, hud_in: Hud, view: W
 	hud.action_pressed.connect(on_action)
 	hud.fell_requested.connect(start_felling_mode)
 	hud.field_requested.connect(start_field_mode)
+	hud.plant_requested.connect(start_plant_mode)
+	hud.heal_requested.connect(start_heal_mode)
 	hud.villager_card_requested.connect(select_villager)
 	sim.bus.subscribe(ConstructionSystem.TOPIC_CHANGED, _on_changed)
 	_on_changed({})
@@ -221,6 +226,22 @@ func start_field_mode() -> void:
 	_update_brush()
 
 
+func start_plant_mode() -> void:
+	if restoration == null:
+		return
+	start_felling_mode()
+	plant_mode = true
+	_update_brush()
+
+
+func start_heal_mode() -> void:
+	if restoration == null:
+		return
+	start_felling_mode()
+	heal_mode = true
+	_update_brush()
+
+
 func cycle_field_crop() -> void:
 	var i := FoodDefs.CROPS.find(field_crop)
 	field_crop = FoodDefs.CROPS[(i + 1) % FoodDefs.CROPS.size()]
@@ -232,6 +253,8 @@ func cancel_felling_mode() -> void:
 		return
 	felling_mode = false
 	field_mode = false
+	plant_mode = false
+	heal_mode = false
 	brush_cells = []
 	if _brush != null:
 		_brush.queue_free()
@@ -254,7 +277,13 @@ func confirm_felling() -> int:
 	if not felling_mode:
 		return 0
 	_update_brush()
-	var n := food.designate(brush_cells, field_crop) if field_mode else con.start_felling(brush_cells)
+	var n := 0
+	if plant_mode:
+		n = restoration.designate_plant(brush_cells)
+	elif heal_mode:
+		n = restoration.designate_heal(brush_cells)
+	else:
+		n = food.designate(brush_cells, field_crop) if field_mode else con.start_felling(brush_cells)
 	cancel_felling_mode()
 	return n
 
@@ -265,7 +294,12 @@ func _update_brush() -> void:
 	var hit = pick_ground()
 	if hit != null:
 		brush_pos = hit
-	brush_cells = food.field_cells_in_brush(brush_pos, brush_radius, brush_circle) if field_mode else con.fell_cells_in_brush(brush_pos, brush_radius, brush_circle)
+	if plant_mode:
+		brush_cells = restoration.plant_cells_in_brush(brush_pos, brush_radius, brush_circle)
+	elif heal_mode:
+		brush_cells = restoration.heal_cells_in_brush(brush_pos, brush_radius, brush_circle)
+	else:
+		brush_cells = food.field_cells_in_brush(brush_pos, brush_radius, brush_circle) if field_mode else con.fell_cells_in_brush(brush_pos, brush_radius, brush_circle)
 	if _brush == null or _brush_drawn != brush_radius or _brush_circle_drawn != brush_circle:
 		if _brush != null:
 			_brush.queue_free()
@@ -287,6 +321,15 @@ func _update_brush() -> void:
 		_brush_drawn = brush_radius
 		_brush_circle_drawn = brush_circle
 	_brush.position = Vector3(brush_pos.x, con.ground_height(brush_pos) + 0.2, brush_pos.z)
+	if plant_mode or heal_mode:
+		hud.show_actions("%s: %s, радиус %d м\nКлеток: %d" % [
+				"Посадка леса" if plant_mode else "Лечение земли", "круг" if brush_circle else "квадрат", roundi(brush_radius), brush_cells.size()], [
+			[&"fell_shape", "Круг" if not brush_circle else "Квадрат", true],
+			[&"fell_minus", "−", brush_radius > BRUSH_MIN],
+			[&"fell_plus", "+", brush_radius < BRUSH_MAX],
+			[&"fell_confirm", "Посадить" if plant_mode else "Лечить", not brush_cells.is_empty()],
+			[&"fell_cancel", "Отмена", true]])
+		return
 	if field_mode:
 		hud.show_actions("Поле: %s, %s, радиус %d м\nСвободных клеток: %d (лес сначала вырубить)" % [
 				FoodDefs.CROP_NAMES[field_crop].to_lower(), "круг" if brush_circle else "квадрат", roundi(brush_radius), brush_cells.size()], [
@@ -365,6 +408,9 @@ func select_at(p: Vector3) -> void:
 	var rid := con.ruin_at(p)
 	if rid >= 0:
 		select_ruin(rid)
+	elif restoration != null and restoration.state_text(map.cell_of(p.x, p.z)) != "":
+		clear_selection()
+		hud.show_actions(restoration.state_text(map.cell_of(p.x, p.z)), [[&"close", "Закрыть", true]])
 	elif food != null and not food.field_at(map.cell_of(p.x, p.z)).is_empty():
 		clear_selection()
 		hud.show_actions(food.field_text(map.cell_of(p.x, p.z)), [[&"close", "Закрыть", true]])
