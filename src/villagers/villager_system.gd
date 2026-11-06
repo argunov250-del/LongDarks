@@ -757,7 +757,12 @@ func _work_food(v: Villager, t: Dictionary, dt: float) -> void:
 				if t["kind"] == &"gfuel":
 					food.add_fuel(t["target"], int(t["carry"]))
 				else:
-					economy.deposit(t["res"], int(t["carry"]))
+					# storages full: keep the load and wait for room (nothing is lost)
+					var left := int(t["carry"]) - economy.deposit(t["res"], int(t["carry"]))
+					if left > 0:
+						t["carry"] = left
+						t["src"] = _nearest_storage_free(v.pos)
+						return
 				t["carry"] = 0
 				_end_task(v)
 

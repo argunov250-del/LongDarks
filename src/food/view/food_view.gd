@@ -3,7 +3,7 @@ extends Node3D
 ## Step 16 (design/gdd/food.md): draws field cells (by crop/stage) and low-poly wild herds.
 
 const REFRESH := 1.5
-const FIELD_LIFT := 0.12
+const FIELD_LIFT := 0.05
 const COLOR_DESIGNATED := Color(0.55, 0.45, 0.28, 0.75)
 const COLOR_PLOWED := Color(0.30, 0.20, 0.12)
 const COLOR_SOWN := Color(0.25, 0.45, 0.18)

@@ -259,3 +259,28 @@ func test_save_load_mid_season() -> void:
 	assert_almost_eq(r2.food.regions[0]["pop"], r.food.regions[0]["pop"], 0.0001)
 	assert_almost_eq(r2.food.bodies[0]["stock"], r.food.bodies[0]["stock"], 0.0001)
 	assert_almost_eq(r2.food._gh(id)["fuel"], 5.0, 0.0001)
+
+
+func test_full_storage_keeps_cargo_until_room() -> void:
+	var r := FoodEnv.new()
+	var f := r.e.add_villager(&"farmer")
+	var free := r.e.storage.free_space()
+	r.e.storage.add(&"stone", free)  # storage full
+	assert_eq(r.e.eco.total_free_space(), 0)
+	f.task = {"kind": &"hunt", "cat": TaskDefs.HUNT, "key": "hn:0", "target": 0, "phase": &"deliver", "work": 5.0, "carry": 8, "src": 0, "res": &"meat", "dest": &""}
+	f.pos = r.e.storage.position
+	r.e.vs._work_food(f, f.task, 1.0)
+	assert_eq(f.task.get("carry", 0), 8, "cargo kept while storages are full")
+	assert_eq(r.e.eco.total(&"meat"), 0)
+	r.e.storage.remove(&"stone", 8)
+	r.e.vs._work_food(f, f.task, 1.0)
+	assert_eq(r.e.eco.total(&"meat"), 8, "delivered once there is room")
+	assert_true(f.task.is_empty())
+	# nothing new offered while full
+	r.e.storage.add(&"stone", r.e.storage.free_space())
+	r.field_cells(2)
+	r.food.season_override = SeasonDefs.SPRING
+	assert_true(r.food.jobs().size() > 0)
+	r.e.vs._jobs_dirty = true
+	r.e.vs._ensure_jobs()
+	assert_true(r.e.vs._jobs.filter(func(j): return j["kind"] == &"field").is_empty(), "no food jobs while storages full")
