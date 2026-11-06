@@ -7,6 +7,7 @@ const SLOT := "__test_needs"
 func _fresh() -> Env:
 	var e := Env.new(5000, {}, 5)
 	e.sim.clock.set_day_length(400.0)
+	e.sim.clock.set_rate_day_length(400.0)
 	e.enable_needs(10.0)
 	return e
 

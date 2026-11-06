@@ -33,6 +33,7 @@ var settings_button: Button
 var villagers_button: Button
 var priorities_button: Button
 var status_label: Label
+var seasons: SeasonSystem      # шаг 13: «Весна, день 3» и температура (null — только «День N»)
 var villagers_ui: VillagersUi  # панели «Жители», «Приоритеты», уведомления
 
 var _top_bar: PanelContainer
@@ -64,6 +65,17 @@ static func format_time(time_of_day: float) -> String:
 
 static func format_date(day: int) -> String:
 	return "День %d" % day
+
+
+## «Весна, день 3».
+static func format_season_date(season_name: String, day_of_season: int) -> String:
+	return "%s, день %d" % [season_name, day_of_season]
+
+
+## «-8 °C», «+12 °C» (знак минус — обычный дефис).
+static func format_temp(temp: float) -> String:
+	var t := roundi(temp)
+	return ("%+d °C" % t) if t != 0 else "0 °C"
 
 
 ## Отступы безопасной зоны (в единицах вьюпорта). Пустой Rect -> нули.
@@ -183,6 +195,11 @@ func do_settings() -> void:
 
 
 ## Подключает панели жителей к системе (main/тесты).
+func bind_seasons(system: SeasonSystem) -> void:
+	seasons = system
+	_refresh_clock(true)
+
+
 func bind_villagers(system: VillagerSystem) -> void:
 	villagers_ui.bind(system, sim)
 
@@ -453,6 +470,9 @@ func _refresh_clock(force: bool) -> void:
 		return
 	var d := format_date(sim.clock.get_day())
 	var t := format_time(sim.clock.get_time_of_day())
+	if seasons != null:
+		d = format_season_date(seasons.season_name(), seasons.day_of_season())
+		t += "  " + format_temp(seasons.outdoor_temp())
 	if force or d + t != _last_text:
 		_last_text = d + t
 		date_label.text = d

@@ -41,6 +41,9 @@ var needs_enabled: bool = true:
 		needs_enabled = value
 		if household != null:
 			household.simulate_heat = value
+## ХУКИ сезонов (SeasonSystem): распутица 0..1 (ХУК для техники) и множитель шага жителей.
+var mud_level: float = 0.0
+var walk_speed_multiplier: float = 1.0
 var next_arrival_in: float = 0.0
 ## Экземплярные копии констант (тесты их подменяют).
 var arrival_min: float = VillagerDefs.ARRIVAL_MIN
@@ -762,7 +765,7 @@ func _tick_villager(v: Villager, dt: float) -> void:
 	if goal == null:
 		_abandon(v)
 		return
-	var res := _go_to(v, goal, _task_radius(t), VillagerDefs.WALK_SPEED, dt)
+	var res := _go_to(v, goal, _task_radius(t), VillagerDefs.WALK_SPEED * walk_speed_multiplier, dt)
 	if res == Go.BLOCKED:
 		v.banned[t["key"]] = _time + TaskDefs.BAN_TIME
 		_abandon(v)

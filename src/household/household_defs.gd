@@ -52,7 +52,13 @@ const COWS := 1
 const MILK_PERIOD := 60.0                   # с на единицу молока
 
 
-## ХУК СЕЗОНОВ: можно ли сажать/собирать сегодня (phase: &"plant" | &"harvest" | &"grow").
-## Сейчас всегда да; позже — по календарю (посадка весной, сбор осенью, зимой рост стоит).
-static func garden_season_allows(_day: int, _phase: StringName) -> bool:
-	return true
+## Огород по сезонам (шаг 13): сажают весной, растёт летом, собирают осенью, зимой — ничего.
+## season — id сезона (SeasonDefs); &"" — календаря нет (тесты, старые сохранения): всё разрешено.
+## phase: &"plant" | &"harvest" | &"grow".
+const GARDEN_SEASON := {&"plant": &"spring", &"grow": &"summer", &"harvest": &"autumn"}
+
+
+static func garden_season_allows(season: StringName, phase: StringName) -> bool:
+	if season == &"":
+		return true
+	return GARDEN_SEASON.get(phase, &"") == season

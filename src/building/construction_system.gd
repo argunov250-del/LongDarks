@@ -31,7 +31,7 @@ var world: WorldMap
 var economy: EconomySystem
 var buildings: Dictionary = {}      # int id -> Building
 var ruins: Dictionary = {}          # int ruin id -> {"id","cell":Vector2i,"pos":Vector3}
-## Хуки (сезоны/погода — позже). Не сохраняются: их выставляет внешняя система.
+## Хуки сезонов/погоды (SeasonSystem). Не сохраняются: их выставляет внешняя система.
 var ground_frozen: bool = false     # блокирует СТАРТ стадии фундамента
 var build_speed_multiplier: float = 1.0
 ## true: плейсхолдерная работа отключена, работу вносят жители через add_work().
@@ -248,6 +248,19 @@ func place(type: StringName, pos: Vector3, rot: float) -> int:
 	if not validate_placement(type, pos, rot)["ok"]:
 		return -1
 	return _create(type, pos, rot, false)
+
+
+## Сразу готовое здание (стартовое состояние игры). Возвращает id или -1.
+func place_completed(type: StringName, pos: Vector3, rot: float) -> int:
+	var id := place(type, pos, rot)
+	if id < 0:
+		return -1
+	var b: Building = buildings[id]
+	b.stage = BuildingDefs.Stage.DONE
+	b.progress = 0.0
+	b.stage_paid = false
+	_on_completed(b)
+	return id
 
 
 func _create(type: StringName, pos: Vector3, rot: float, restored: bool) -> int:

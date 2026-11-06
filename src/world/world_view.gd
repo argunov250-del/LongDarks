@@ -19,6 +19,37 @@ const COLORS := {
 	WorldMap.Terrain.POISON: Color(0.52, 0.55, 0.20),
 }
 const SNOW := Color(0.90, 0.93, 0.97)
+## Доля «травяного» оттенка по типу клетки (летом земля зеленее).
+const GRASSINESS := {
+	WorldMap.Terrain.GROUND: 1.0, WorldMap.Terrain.FOREST: 0.6, WorldMap.Terrain.RUINS: 0.3,
+	WorldMap.Terrain.POISON: 0.0, WorldMap.Terrain.RIVER: 0.0, WorldMap.Terrain.LAKE: 0.0,
+}
+const TERRAIN_SHADER := """
+shader_type spatial;
+render_mode cull_back;
+uniform float snow_cover = 1.0;
+uniform vec3 grass_tint = vec3(1.0);
+uniform float grass_amount = 0.0;
+uniform vec3 snow_color = vec3(0.90, 0.93, 0.97);
+varying vec3 base;
+varying float affinity;
+varying float grass;
+void vertex() {
+	base = COLOR.rgb;
+	affinity = COLOR.a;
+	grass = UV.x;
+}
+void fragment() {
+	vec3 c = mix(base, base * grass_tint, grass * grass_amount);
+	float t = clamp((snow_cover - (1.0 - affinity) * 0.55) / 0.45, 0.0, 1.0);
+	ALBEDO = mix(c, snow_color, t * affinity);
+	ROUGHNESS = 1.0;
+}
+"""
+
+var terrain_material: ShaderMaterial
+var _tree_mat: StandardMaterial3D
+const TREE_COLOR := Color(0.18, 0.28, 0.20)
 
 
 func build(world_map: WorldMap) -> void:
@@ -54,9 +85,10 @@ func _build_terrain() -> void:
 			var p11 := Vector3((cx + 1) * cs, map.node_height(cx + 1, cz + 1), (cz + 1) * cs)
 			var avg := (p00.y + p10.y + p01.y + p11.y) * 0.25
 			var base: Color = COLORS[t]
-			var col := base.lerp(SNOW, _snow_amount(t, avg, cx, cz))
 			var shade := 0.94 + map.hash01(cx, cz, 1) * 0.12
-			col = Color(col.r * shade, col.g * shade, col.b * shade)
+			# rgb — цвет без снега, a — «сколько снега» ложится (см. TERRAIN_SHADER).
+			var col := Color(base.r * shade, base.g * shade, base.b * shade, _snow_amount(t, avg, cx, cz))
+			var grassy: float = GRASSINESS.get(t, 0.0)
 			# Диагональ выбирается по перепаду высот — меньше артефактов.
 			var tris: Array
 			if absf(p00.y - p11.y) < absf(p10.y - p01.y):
@@ -65,17 +97,32 @@ func _build_terrain() -> void:
 				tris = [p00, p10, p01, p10, p11, p01]
 			for v: Vector3 in tris:
 				st.set_color(col)
+				st.set_uv(Vector2(grassy, 0.0))
 				st.add_vertex(v)
 	terrain_vertex_count = n * n * 6
 	st.generate_normals()  # без индексов => плоское затенение
 	var mi := MeshInstance3D.new()
 	mi.name = "Terrain"
 	mi.mesh = st.commit()
-	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mat.roughness = 1.0
-	mi.material_override = mat
+	var shader := Shader.new()
+	shader.code = TERRAIN_SHADER
+	terrain_material = ShaderMaterial.new()
+	terrain_material.shader = shader
+	mi.material_override = terrain_material
 	add_child(mi)
+	apply_season(1.0, Color.WHITE, 0.0)
+
+
+## Сезонный вид (SeasonVisuals): снег 0..1, оттенок и доля «травы» на земле, цвет деревьев.
+func apply_season(snow: float, grass_tint: Color, grass_amount: float) -> void:
+	if terrain_material != null:
+		terrain_material.set_shader_parameter("snow_cover", snow)
+		terrain_material.set_shader_parameter("grass_tint", Vector3(grass_tint.r, grass_tint.g, grass_tint.b))
+		terrain_material.set_shader_parameter("grass_amount", grass_amount)
+	if _tree_mat != null:
+		var tint := Color.WHITE.lerp(grass_tint, grass_amount * 0.5)
+		var c := TREE_COLOR.lerp(SNOW, 0.35 * snow)
+		_tree_mat.albedo_color = Color(c.r * tint.r, c.g * tint.g, c.b * tint.b)
 
 
 func _build_water() -> void:
@@ -94,9 +141,9 @@ func _build_water() -> void:
 	add_child(mi)
 
 
-func _make_multimesh(node_name: String, mesh: Mesh, color: Color, xforms: Array[Transform3D]) -> void:
+func _make_multimesh(node_name: String, mesh: Mesh, color: Color, xforms: Array[Transform3D]) -> StandardMaterial3D:
 	if xforms.is_empty():
-		return
+		return null
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh
@@ -111,6 +158,7 @@ func _make_multimesh(node_name: String, mesh: Mesh, color: Color, xforms: Array[
 	mat.roughness = 1.0
 	mi.material_override = mat
 	add_child(mi)
+	return mat
 
 
 func _build_props() -> void:
@@ -162,7 +210,7 @@ func _build_props() -> void:
 	cone.height = 3.0
 	cone.radial_segments = 5
 	cone.rings = 1
-	_make_multimesh("Trees", cone, Color(0.18, 0.28, 0.20).lerp(SNOW, 0.25), trees)
+	_tree_mat = _make_multimesh("Trees", cone, TREE_COLOR.lerp(SNOW, 0.25), trees)
 	var trees_node := get_node_or_null("Trees") as MultiMeshInstance3D
 	_tree_mm = trees_node.multimesh if trees_node != null else null
 	_trees_rev = -1

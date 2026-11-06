@@ -6,7 +6,7 @@ const TOPIC_RESOURCES_CHANGED := &"resources_changed"
 
 var storages: Array[Storage] = []
 var deposits: Deposits
-## Внешний флаг (сезоны — позже): при true порча остановлена везде.
+## Внешний флаг (SeasonSystem: холоднее +4 °C): при true порча остановлена везде.
 var ambient_cold: bool = false
 
 var _next_id: int = 1
@@ -95,7 +95,7 @@ func tick(sim: Simulation, dt: float) -> void:
 	_sim = sim
 	if ambient_cold or dt <= 0.0:
 		return
-	var days := dt / (float(sim.clock.day_length_usec) / GameClock.USEC)
+	var days := dt / sim.clock.rate_day_seconds()
 	var any := false
 	for s in storages:
 		if not s.spoil(days).is_empty():
