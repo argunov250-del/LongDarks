@@ -40,4 +40,4 @@ const BIRD_LAND_CHANCE := 0.6      # шанс сесть на дерево в т
 const BIRD_PERCH_TIME_MIN := 4.0
 const BIRD_PERCH_TIME_MAX := 9.0
 const BIRD_TREE_TOP := 3.4         # высота верхушки дерева над землёй, м
-const BIRD_SCALE := 0.9
+const BIRD_SCALE := 1.8
