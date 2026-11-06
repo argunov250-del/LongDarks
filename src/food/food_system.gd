@@ -21,6 +21,10 @@ var bodies: Array[Dictionary] = []            # water bodies: {n, stock, cap, sp
 var greenhouses: Dictionary = {}              # building id -> {progress, ripe, crop}
 var picked: Dictionary = {}                   # forest cell idx -> true (mushrooms taken this year)
 var land_recovery: float = 1.0
+## Step 17 (design/gdd/land-restoration.md): RestorationSystem (optional). Capacity multipliers set by it.
+var restoration: RestorationSystem
+var wildlife_cap_mult: float = 1.0
+var _day_t := 0.0                      # accumulated game days (hunting pressure window)
 ## Test hooks: force season / progress / water factor (-1 = read the real systems).
 var season_override: StringName = &""
 var progress_override: float = -1.0
@@ -49,7 +53,7 @@ func attach(sim: Simulation) -> void:
 
 
 static func is_food_kind(kind: StringName) -> bool:
-	return kind in [&"field", &"hunt", &"fish", &"forage", &"gpick"]
+	return kind in [&"field", &"hunt", &"fish", &"forage", &"gpick", &"plant", &"heal_land"]
 
 
 # ---------- season / water helpers ----------
@@ -87,7 +91,8 @@ func water_factor() -> float:
 
 
 func fertility_at(c: Vector2i) -> float:
-	return weather.fertility_at(c) if weather != null else 0.0
+	var f := weather.fertility_at(c) if weather != null else 0.0
+	return restoration.soil_fertility(c, f) if restoration != null else f
 
 
 # ---------- init ----------
@@ -128,7 +133,7 @@ func _init_wildlife() -> void:
 			var cap := maxf(FoodDefs.CAP_MIN[sp], cells.size() * FoodDefs.CAP_PER_FOREST_CELL[sp])
 			var c0 := cells[cells.size() / 2]
 			regions.append({"id": regions.size(), "species": sp, "cap": cap, "pop": cap, "gone": false,
-				"back_in": 0.0, "pos": world.cell_center(c0 % world.size, c0 / world.size), "target": c0,
+				"back_in": 0.0, "hunts": [], "cap0": cap, "pos": world.cell_center(c0 % world.size, c0 / world.size), "target": c0,
 				"wander": 0.0, "cells": cells})
 
 
@@ -181,7 +186,7 @@ func _init_water() -> void:
 		if spots.is_empty():
 			continue
 		var cap := maxf(FoodDefs.FISH_CAP_MIN, comp.size() * FoodDefs.FISH_PER_BODY_CELL)
-		bodies.append({"n": comp.size(), "stock": cap, "cap": cap, "spots": spots})
+		bodies.append({"n": comp.size(), "stock": cap, "cap": cap, "cap0": cap, "spots": spots})
 
 
 func _is_water_cell(cx: int, cz: int) -> bool:
@@ -214,9 +219,11 @@ func field_cells_in_brush(center: Vector3, radius: float, circle: bool) -> Array
 func is_field_ground(cell: Vector2i) -> bool:
 	match world.cell_type(cell.x, cell.y):
 		WorldMap.Terrain.GROUND:
-			return true
+			return restoration == null or restoration.can_cultivate(cell)
 		WorldMap.Terrain.FOREST:
-			return economy.deposits.remaining(cell) <= 0
+			return economy.deposits.remaining(cell) <= 0 and (restoration == null or restoration.can_cultivate(cell))
+		WorldMap.Terrain.POISON:
+			return restoration != null and restoration.can_cultivate(cell)
 	return false
 
 
@@ -424,11 +431,15 @@ func jobs() -> Array[Dictionary]:
 		var g := _gh(id)
 		if g["ripe"] > 0:
 			out.append(_job("gp:%d" % id, TaskDefs.GREENHOUSE, &"gpick", id, b.position))
+	if restoration != null:
+		out.append_array(restoration.jobs())
 	return out
 
 
 ## Where the work for a job happens; null — target gone.
 func site_pos(kind: StringName, target: int) -> Variant:
+	if kind == &"plant" or kind == &"heal_land":
+		return world.cell_center(target % world.size, target / world.size)
 	match kind:
 		&"field", &"forage":
 			return world.cell_center(target % world.size, target / world.size)
@@ -453,6 +464,8 @@ func site_radius(kind: StringName) -> float:
 
 ## Work needed to complete the job now (at rate 1.0).
 func work_need(kind: StringName, target: int) -> float:
+	if kind == &"plant" or kind == &"heal_land":
+		return RestorationDefs.PLANT_WORK if kind == &"plant" else RestorationDefs.HEAL_WORK
 	match kind:
 		&"field":
 			return FoodDefs.WORK.get(field_action(target), 1.0)
@@ -461,6 +474,10 @@ func work_need(kind: StringName, target: int) -> float:
 
 ## Completes a job: applies world effects, returns what the worker carries ({res, n} or {}).
 func finish(kind: StringName, target: int) -> Dictionary:
+	if kind == &"plant" or kind == &"heal_land":
+		if restoration != null:
+			restoration.finish(kind, target)
+		return {}
 	match kind:
 		&"field":
 			var a := field_action(target)
@@ -485,9 +502,10 @@ func finish(kind: StringName, target: int) -> Dictionary:
 			if r["gone"] or r["pop"] < 1.0:
 				return {}
 			r["pop"] -= 1.0
-			if r["pop"] < r["cap"] * FoodDefs.LEAVE_FRACTION:
+			# decision 3 (approved): the herd leaves when hunted too often, whatever its size
+			r["hunts"].append(_day_t)
+			if hunt_pressure(r) > FoodDefs.HUNT_PRESSURE_MAX:
 				r["gone"] = true
-				r["pop"] = 0.0
 				r["back_in"] = FoodDefs.RETURN_DAYS
 			return {"res": &"meat", "n": FoodDefs.MEAT_PER_KILL[r["species"]]}
 		&"fish":
@@ -509,6 +527,14 @@ func finish(kind: StringName, target: int) -> Dictionary:
 	return {}
 
 
+## Hunts in this area within the recent window (design/gdd/food.md, decision 3).
+func hunt_pressure(r: Dictionary) -> int:
+	var hunts: Array = r["hunts"]
+	while not hunts.is_empty() and hunts[0] < _day_t - FoodDefs.HUNT_WINDOW_DAYS:
+		hunts.pop_front()
+	return hunts.size()
+
+
 # ---------- tick ----------
 
 func tick(sim: Simulation, dt: float) -> void:
@@ -520,6 +546,7 @@ func tick(sim: Simulation, dt: float) -> void:
 		_on_season_change(season)
 		_last_season = season
 	var days := dt / _day_s()
+	_day_t += days
 	_grow_fields(season, dt)
 	_tick_greenhouses(days)
 	_tick_wildlife(dt, days)
@@ -577,17 +604,24 @@ func _tick_wildlife(dt: float, days: float) -> void:
 	for r in regions:
 		if r["gone"]:
 			r["back_in"] -= days * land_recovery
-			if r["back_in"] <= 0.0:
+			if r["back_in"] <= 0.0 and hunt_pressure(r) <= FoodDefs.HUNT_RETURN_PRESSURE:
 				r["gone"] = false
-				r["pop"] = r["cap"] * FoodDefs.RETURN_FRACTION
+				r["hunts"].clear()
+				r["pop"] = maxf(r["pop"], r["cap"] * FoodDefs.RETURN_FRACTION)
 			continue
+		r["cap"] = r["cap0"] * wildlife_cap_mult
+		r["pop"] = minf(r["pop"], r["cap"])
 		r["pop"] = minf(r["cap"], r["pop"] + FoodDefs.REGEN_PER_DAY * land_recovery * maxf(r["pop"], FoodDefs.MIN_BREEDERS) * (1.0 - r["pop"] / r["cap"]) * days)
 		# wander inside the region's forest
 		r["wander"] -= dt
 		if r["wander"] <= 0.0 and _sim != null:
 			r["wander"] = FoodDefs.WANDER_INTERVAL
 			var cells: PackedInt32Array = r["cells"]
-			r["target"] = cells[_sim.rng.randi_range(0, cells.size() - 1)]
+			for _try in 4:
+				var cand := cells[_sim.rng.randi_range(0, cells.size() - 1)]
+				r["target"] = cand
+				if restoration == null or not restoration.is_poisoned(Vector2i(cand % world.size, cand / world.size)):
+					break  # animals avoid poisoned cells
 		var tp := world.cell_center(int(r["target"]) % world.size, int(r["target"]) / world.size)
 		var d := Vector3(tp.x - r["pos"].x, 0.0, tp.z - r["pos"].z)
 		if d.length() > 0.1:
@@ -622,7 +656,7 @@ func save_state() -> Dictionary:
 		fl[str(i)] = [String(f["crop"]), f["stage"], f["growth"], f["wsum"], f["gsum"]]
 	var rl := []
 	for r in regions:
-		rl.append([r["pop"], r["gone"], r["back_in"], r["pos"].x, r["pos"].z, r["target"]])
+		rl.append([r["pop"], r["gone"], r["back_in"], r["pos"].x, r["pos"].z, r["target"], r["hunts"].duplicate()])
 	var bl := []
 	for b in bodies:
 		bl.append(b["stock"])
@@ -634,7 +668,7 @@ func save_state() -> Dictionary:
 	for i in picked:
 		pk.append(i)
 	return {"fields": fl, "regions": rl, "bodies": bl, "greenhouses": gl, "picked": pk,
-		"season": String(_last_season), "recovery": land_recovery}
+		"season": String(_last_season), "recovery": land_recovery, "day_t": _day_t}
 
 
 func load_state(d: Dictionary) -> void:
@@ -658,6 +692,10 @@ func load_state(d: Dictionary) -> void:
 				r["back_in"] = float(a[2])
 				r["pos"] = Vector3(float(a[3]), world.height_at(float(a[3]), float(a[4])), float(a[4]))
 				r["target"] = SaveManager.to_int(a[5], r["target"])
+				r["hunts"] = []
+				if a.size() >= 7 and a[6] is Array:
+					for h in a[6]:
+						r["hunts"].append(float(h))
 	if d.get("bodies") is Array:
 		var bl: Array = d["bodies"]
 		for i in mini(bl.size(), bodies.size()):
@@ -672,5 +710,6 @@ func load_state(d: Dictionary) -> void:
 			picked[SaveManager.to_int(i, -1)] = true
 	_last_season = StringName(String(d.get("season", "")))
 	land_recovery = float(d.get("recovery", 1.0))
+	_day_t = float(d.get("day_t", 0.0))
 	_plowed_sent = -1
 	_emit_changed()

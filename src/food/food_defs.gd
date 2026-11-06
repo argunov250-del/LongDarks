@@ -42,7 +42,9 @@ const MEAT_PER_KILL := {&"deer": 8, &"hare": 2}
 const SPECIES_NAMES := {&"deer": "олени", &"hare": "зайцы"}
 const REGEN_PER_DAY := 0.06          # logistic rate
 const MIN_BREEDERS := 1.0
-const LEAVE_FRACTION := 0.25         # pop below cap*this after a kill: herd leaves
+const HUNT_WINDOW_DAYS := 10.0       # decision 3: hunting pressure = hunts per area within this window
+const HUNT_PRESSURE_MAX := 5         # more hunts than this in the window: the herd leaves (any numbers)
+const HUNT_RETURN_PRESSURE := 0      # herd returns only when the window is clear of hunts
 const RETURN_DAYS := 20.0            # days away before the herd comes back (at recovery 1.0)
 const RETURN_FRACTION := 0.4         # of cap on return
 const HUNT_RANGE := 6.0

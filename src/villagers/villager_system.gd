@@ -598,7 +598,7 @@ func _assign(v: Villager, job: Dictionary) -> void:
 			v.task["src"] = household.nearest_well(v.pos)  # id здания-колодца
 		&"garden":
 			v.task["phase"] = &"work"
-		&"field", &"hunt", &"fish", &"forage", &"gpick":
+		&"field", &"hunt", &"fish", &"forage", &"gpick", &"plant", &"heal_land":
 			v.task["phase"] = &"work"
 		&"stoke":
 			v.task["phase"] = &"fetch"  # к поленнице за охапкой, затем к печи
@@ -646,7 +646,7 @@ func _task_pos(v: Villager, t: Dictionary) -> Variant:
 			return construction.ruins[t["target"]]["pos"] if construction.ruins.has(t["target"]) else null
 		&"chop", &"carry", &"water", &"food", &"garden", &"stoke", &"extinguish":
 			return _haul_pos(t)
-		&"field", &"hunt", &"fish", &"forage", &"gpick":
+		&"field", &"hunt", &"fish", &"forage", &"gpick", &"plant", &"heal_land":
 			return _food_pos(t)
 		&"eat", &"drink":
 			var mb := construction.get_building(t["target"])
@@ -675,7 +675,7 @@ func _task_radius(t: Dictionary) -> float:
 			return 1.7
 		&"chop", &"carry", &"water", &"food", &"garden", &"stoke", &"extinguish":
 			return _haul_radius(t)
-		&"field", &"hunt", &"fish", &"forage", &"gpick":
+		&"field", &"hunt", &"fish", &"forage", &"gpick", &"plant", &"heal_land":
 			return _food_radius(t)
 		&"eat", &"drink":
 			if t["dest"] == &"home":
@@ -958,7 +958,7 @@ func _work(v: Villager, t: Dictionary, dt: float) -> void:
 			_work_meal(v, t, dt)
 		&"sleep", &"warm", &"heal", &"treat", &"shelter":
 			pass  # восстановление и лечение — в NeedsSystem.tick, пока житель на месте
-		&"field", &"hunt", &"fish", &"forage", &"gpick":
+		&"field", &"hunt", &"fish", &"forage", &"gpick", &"plant", &"heal_land":
 			_work_food(v, t, dt)
 		&"chop", &"carry", &"water", &"food", &"garden", &"stoke", &"extinguish":
 			t["work"] += work_rate(v, TaskDefs.CHORES) * dt
@@ -1210,6 +1210,10 @@ func task_text(v: Villager) -> String:
 			txt = "Несёт улов на склад" if t["phase"] == &"deliver" else "Ловит рыбу (%s)" % (food.fish_hint() if food != null else "?")
 		&"forage":
 			txt = "Несёт грибы на склад" if t["phase"] == &"deliver" else "Собирает грибы"
+		&"plant":
+			txt = "Сажает саженец"
+		&"heal_land":
+			txt = "Лечит отравленную землю: сажает очищающие травы"
 		&"gpick":
 			txt = "Несёт овощи на склад" if t["phase"] == &"deliver" else "Собирает урожай в теплице"
 		&"garden":

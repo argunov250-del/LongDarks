@@ -13,6 +13,7 @@ const SALT_RUINS := 202
 
 var world: WorldMap
 var _taken: Dictionary = {}  # int индекс клетки -> int взято
+var _grown: Dictionary = {}  # int индекс не-лесной клетки -> int деревьев (посадка, шаг 17)
 ## Растёт при любом изменении запасов (дешёвая проверка для визуала).
 var revision: int = 0
 
@@ -36,6 +37,8 @@ func resource_at(cell: Vector2i) -> StringName:
 	match world.cell_type(cell.x, cell.y):
 		WorldMap.Terrain.FOREST:
 			return &"logs"
+		WorldMap.Terrain.GROUND:
+			return &"logs" if _grown.has(_index(cell)) else &""
 		WorldMap.Terrain.RUINS:
 			return &"scrap_metal"
 	return &""
@@ -43,6 +46,8 @@ func resource_at(cell: Vector2i) -> StringName:
 
 ## Исходный запас (до добычи).
 func initial_amount(cell: Vector2i) -> int:
+	if _in_bounds(cell) and _grown.has(_index(cell)):
+		return _grown[_index(cell)]
 	match resource_at(cell):
 		&"logs":
 			return TREES_MIN + int(world.hash01(cell.x, cell.y, SALT_FOREST) * (TREES_MAX - TREES_MIN + 1))
@@ -73,16 +78,44 @@ func take(cell: Vector2i, amount: int) -> int:
 	return got
 
 
+## Выросшие посаженные деревья (design/gdd/land-restoration.md): на вырубленной клетке леса возвращает до n деревьев,
+## на голой земле создаёт новое месторождение logs. Возвращает число деревьев клетки после роста.
+func plant_trees(cell: Vector2i, n: int) -> int:
+	if not _in_bounds(cell) or n <= 0:
+		return 0
+	var i := _index(cell)
+	match world.cell_type(cell.x, cell.y):
+		WorldMap.Terrain.FOREST:
+			var want := mini(n, initial_amount(cell))
+			_taken[i] = maxi(initial_amount(cell) - want, 0) if remaining(cell) < want else _taken.get(i, 0)
+		WorldMap.Terrain.GROUND:
+			_grown[i] = n
+			_taken.erase(i)
+		_:
+			return 0
+	revision += 1
+	return remaining(cell)
+
+
 func to_dict() -> Dictionary:
 	var t := {}
 	for k in _taken:
 		t[str(k)] = _taken[k]
-	return {"taken": t}
+	var g := {}
+	for k in _grown:
+		g[str(k)] = _grown[k]
+	return {"taken": t, "grown": g}
 
 
 func from_dict(d: Dictionary) -> void:
 	_taken.clear()
+	_grown.clear()
 	revision += 1
+	if d.get("grown") is Dictionary:
+		for k in d["grown"]:
+			var n := SaveManager.to_int(d["grown"][k], 0)
+			if n > 0:
+				_grown[SaveManager.to_int(k, -1)] = n
 	if d.get("taken") is Dictionary:
 		for k in d["taken"]:
 			var n := SaveManager.to_int(d["taken"][k], 0)

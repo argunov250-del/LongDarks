@@ -19,6 +19,8 @@ var _plowed_cells: int = 0
 var _planted_provider: Callable = Callable()
 var _plowed_provider: Callable = Callable()
 var _first_birds: bool = false
+## Шаг 17: восстановление земли 0..1 (задаёт RestorationSystem) — больше птиц.
+var land_recovery: float = 0.0
 var _milestones_done: int = 0
 
 
@@ -107,7 +109,8 @@ func milestones_reached() -> int:
 func bird_count() -> int:
 	if not _first_birds:
 		return 0
-	return roundi(lerpf(float(ClimateDefs.BIRDS_MIN), float(ClimateDefs.BIRDS_MAX), warm_fraction()))
+	var base := lerpf(float(ClimateDefs.BIRDS_MIN), float(ClimateDefs.BIRDS_MAX), warm_fraction())
+	return roundi(base * (1.0 + ClimateDefs.BIRD_RECOVERY_BONUS * clampf(land_recovery, 0.0, 1.0)))
 
 
 ## Длительность сезона в реальных минутах при текущем потеплении (год постоянной длины).

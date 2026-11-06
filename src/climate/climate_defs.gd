@@ -26,6 +26,7 @@ const MILESTONES: Array[float] = [1.0, 2.0, 4.0, 6.0, 8.0]
 const BIRDS_MIN := 8
 const BIRDS_MAX := 48
 const BIRD_FLOCK_SIZE := 8
+const BIRD_RECOVERY_BONUS := 0.5   # шаг 17: +доля птиц при полном восстановлении земли
 
 # ---------- визуал птиц ----------
 const BIRD_FADE_IN := 0.1          # доля весны, за которую птицы прилетают

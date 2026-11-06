@@ -11,10 +11,26 @@ const RIPE_COLORS := {&"grain": Color(0.90, 0.78, 0.25), &"potato": Color(0.45, 
 const DEER_COLOR := Color(0.50, 0.33, 0.18)
 const HARE_COLOR := Color(0.62, 0.58, 0.52)
 const MAX_PER_REGION := 12
+## Crops on fields (design/gdd/food.md, step 17): stage by growth, low-poly MultiMesh (9 plants per cell).
+enum { CROP_NONE, CROP_SPROUT, CROP_TALL, CROP_RIPE }
+const CROP_GRID := 3
+const SPROUT_UNTIL := 0.35            # growth fraction: sprouts below, tall plants above
+const CROP_COLORS := {
+	&"grain": [Color(0.45, 0.65, 0.25), Color(0.55, 0.70, 0.25), Color(0.92, 0.76, 0.22)],
+	&"potato": [Color(0.40, 0.62, 0.25), Color(0.28, 0.52, 0.20), Color(0.30, 0.50, 0.18)],
+	&"rapeseed": [Color(0.42, 0.64, 0.26), Color(0.38, 0.60, 0.22), Color(0.97, 0.88, 0.12)],
+}
+## Plant size (x/z radius, height) per crop and stage (sprout, tall, ripe), metres.
+const CROP_SIZE := {
+	&"grain": [Vector2(0.10, 0.18), Vector2(0.12, 0.65), Vector2(0.12, 0.95)],
+	&"potato": [Vector2(0.16, 0.14), Vector2(0.38, 0.38), Vector2(0.44, 0.45)],
+	&"rapeseed": [Vector2(0.12, 0.18), Vector2(0.16, 0.7), Vector2(0.30, 0.85)],
+}
 
 var food: FoodSystem
 var world: WorldMap
 var _fields: MeshInstance3D
+var _crops: MultiMeshInstance3D
 var _herds: Dictionary = {}     # region id -> Array[Node3D]
 var _acc := REFRESH
 var _dirty := true
@@ -32,6 +48,13 @@ func setup(food_in: FoodSystem, world_in: WorldMap, sim: Simulation) -> void:
 	m.roughness = 1.0
 	_fields.material_override = m
 	add_child(_fields)
+	_crops = MultiMeshInstance3D.new()
+	_crops.name = "Crops"
+	var cm := StandardMaterial3D.new()
+	cm.vertex_color_use_as_albedo = true
+	cm.roughness = 1.0
+	_crops.material_override = cm
+	add_child(_crops)
 	sim.bus.subscribe(FoodSystem.TOPIC_CHANGED, func(_p: Dictionary) -> void: _dirty = true)
 
 
@@ -48,6 +71,7 @@ func update(delta: float) -> void:
 		_acc = 0.0
 		_dirty = false
 		rebuild_fields()
+		rebuild_crops()
 	_sync_herds(delta)
 
 
@@ -135,3 +159,83 @@ func _sync_herds(_delta: float) -> void:
 			n.position = pos
 			if pos.distance_to(old) > 0.01:
 				n.rotation.y = atan2(-(pos.z - old.z), pos.x - old.x)
+
+
+# ---------- crops ----------
+
+## Visual stage of a field cell dictionary (FoodSystem.fields value).
+func crop_stage(f: Dictionary) -> int:
+	match f["stage"]:
+		FoodSystem.Stage.SOWN:
+			return CROP_SPROUT if f["growth"] < SPROUT_UNTIL else CROP_TALL
+		FoodSystem.Stage.RIPE:
+			return CROP_RIPE
+	return CROP_NONE
+
+
+func crop_color(crop: StringName, stage: int) -> Color:
+	return CROP_COLORS[crop][clampi(stage, CROP_SPROUT, CROP_RIPE) - 1]
+
+
+func crop_count() -> int:
+	return _crops.multimesh.visible_instance_count if _crops != null and _crops.multimesh != null else 0
+
+
+static func _plant_mesh() -> ArrayMesh:
+	# 4-sided pyramid, base radius 1, height 1 (scaled per plant)
+	var v := PackedVector3Array()
+	var n := PackedVector3Array()
+	var tip := Vector3(0, 1, 0)
+	for k in 4:
+		var a0 := float(k) * TAU / 4.0
+		var a1 := float(k + 1) * TAU / 4.0
+		var p0 := Vector3(cos(a0), 0, sin(a0))
+		var p1 := Vector3(cos(a1), 0, sin(a1))
+		v.append_array(PackedVector3Array([p0, tip, p1]))
+		var nn := (tip - p0).cross(p1 - p0).normalized()
+		n.append_array(PackedVector3Array([nn, nn, nn]))
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = v
+	arr[Mesh.ARRAY_NORMAL] = n
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	return mesh
+
+
+func rebuild_crops() -> void:
+	if _crops == null or food == null:
+		return
+	var items: Array = []
+	var cs := world.cell_size
+	var step := cs / float(CROP_GRID)
+	for i in food.fields:
+		var f: Dictionary = food.fields[i]
+		var st := crop_stage(f)
+		if st == CROP_NONE:
+			continue
+		var cx: int = i % world.size
+		var cz: int = i / world.size
+		var c := world.cell_center(cx, cz)
+		var sz: Vector2 = CROP_SIZE[f["crop"]][st - 1]
+		var grow := 1.0
+		if st != CROP_RIPE:
+			grow = 0.8 + 0.2 * clampf(f["growth"], 0.0, 1.0)
+		var col := crop_color(f["crop"], st)
+		for gz in CROP_GRID:
+			for gx in CROP_GRID:
+				var h := world.hash01(cx * 7 + gx, cz * 7 + gz, 733)
+				var px := c.x - cs * 0.5 + (gx + 0.5) * step + (h - 0.5) * step * 0.4
+				var pz := c.z - cs * 0.5 + (gz + 0.5) * step + (world.hash01(cx * 7 + gx, cz * 7 + gz, 734) - 0.5) * step * 0.4
+				var s := Vector3(sz.x, sz.y * grow * (0.85 + 0.3 * h), sz.x)
+				items.append([Transform3D(Basis.from_scale(s), Vector3(px, world.height_at(px, pz) + FIELD_LIFT, pz)), col])
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = _plant_mesh()
+	mm.instance_count = items.size()
+	for k in items.size():
+		mm.set_instance_transform(k, items[k][0])
+		mm.set_instance_color(k, items[k][1])
+	mm.visible_instance_count = items.size()
+	_crops.multimesh = mm

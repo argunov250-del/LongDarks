@@ -16,19 +16,22 @@ const HUNT := &"hunt"
 const FISH := &"fish"
 const FORAGE := &"forage"
 const GREENHOUSE := &"greenhouse"
+## Step 17 (land restoration): planting saplings, treating poisoned land.
+const PLANT := &"plant"
+const HEAL_LAND := &"heal_land"
 
-const CATEGORIES: Array[StringName] = [BUILD, FELL, DISMANTLE, PRODUCTION, CHORES, FIELD, HUNT, FISH, FORAGE, GREENHOUSE]
-const WORK_CATEGORIES: Array[StringName] = [BUILD, FELL, DISMANTLE, PRODUCTION, REPAIR, CHORES, FIELD, HUNT, FISH, FORAGE, GREENHOUSE]
+const CATEGORIES: Array[StringName] = [BUILD, FELL, DISMANTLE, PRODUCTION, CHORES, FIELD, HUNT, FISH, FORAGE, GREENHOUSE, PLANT, HEAL_LAND]
+const WORK_CATEGORIES: Array[StringName] = [BUILD, FELL, DISMANTLE, PRODUCTION, REPAIR, CHORES, FIELD, HUNT, FISH, FORAGE, GREENHOUSE, PLANT, HEAL_LAND]
 const NAMES := {
 	BUILD: "Стройка", FELL: "Вырубка", DISMANTLE: "Разбор",
 	PRODUCTION: "Производство", CHORES: "Повседневные дела", REPAIR: "Ремонт",
-	FIELD: "Поле", HUNT: "Охота", FISH: "Рыбалка", FORAGE: "Сбор", GREENHOUSE: "Теплица",
+	FIELD: "Поле", HUNT: "Охота", FISH: "Рыбалка", FORAGE: "Сбор", GREENHOUSE: "Теплица", PLANT: "Посадка", HEAL_LAND: "Лечение земли",
 }
 
 const PRIORITY_MIN := 0
 const PRIORITY_MAX := 3
 const DEFAULT_PRIORITY := {BUILD: 2, FELL: 2, DISMANTLE: 2, PRODUCTION: 2, CHORES: 1,
-	FIELD: 2, HUNT: 1, FISH: 1, FORAGE: 1, GREENHOUSE: 2}
+	FIELD: 2, HUNT: 1, FISH: 1, FORAGE: 1, GREENHOUSE: 2, PLANT: 1, HEAL_LAND: 1}
 const PRIORITY_NAMES: Array[String] = ["выкл", "низкий", "средний", "высокий"]
 
 ## --- Выбор задачи: score = приоритет*W + (множитель пригодности-1)*W - расстояние*W ---
@@ -45,7 +48,7 @@ const BASE_RATE := {
 	BUILD: BuildingDefs.BUILD_RATE, FELL: BuildingDefs.BUILD_RATE,
 	DISMANTLE: BuildingDefs.BUILD_RATE, PRODUCTION: Recipes.WORKER_RATE,
 	REPAIR: Recipes.WORKER_RATE, CHORES: 1.0,
-	FIELD: 1.0, HUNT: 1.0, FISH: 1.0, FORAGE: 1.0, GREENHOUSE: 1.0,
+	FIELD: 1.0, HUNT: 1.0, FISH: 1.0, FORAGE: 1.0, GREENHOUSE: 1.0, PLANT: 1.0, HEAL_LAND: 1.0,
 }
 ## Профессия, подходящая задаче -> множитель скорости. Нет в таблице — 1.0.
 const PROFESSION_BONUS := {
@@ -53,7 +56,7 @@ const PROFESSION_BONUS := {
 	FELL: {&"carpenter": 1.5, &"hunter": 1.15},
 	DISMANTLE: {&"builder": 1.3, &"mechanic": 1.25},
 	REPAIR: {&"mechanic": 1.5},
-	FIELD: {&"farmer": 1.5}, GREENHOUSE: {&"farmer": 1.5},
+	FIELD: {&"farmer": 1.5}, GREENHOUSE: {&"farmer": 1.5}, PLANT: {&"farmer": 1.25}, HEAL_LAND: {&"farmer": 1.25},
 	HUNT: {&"hunter": 1.5}, FISH: {&"fisher": 1.5},
 }
 ## Производство: профессия, подходящая зданию (множитель PRODUCTION_MATCH_BONUS).

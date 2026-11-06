@@ -437,7 +437,7 @@ func fell_cells_in_brush(center: Vector3, radius: float, circle: bool) -> Array[
 	var z := world.cell_of(center.x + radius, center.z + radius)
 	for cz in range(maxi(a.y, 0), mini(z.y, world.size - 1) + 1):
 		for cx in range(maxi(a.x, 0), mini(z.x, world.size - 1) + 1):
-			if world.cell_type(cx, cz) != WorldMap.Terrain.FOREST:
+			if economy.deposits.resource_at(Vector2i(cx, cz)) != &"logs":
 				continue
 			var cell := Vector2i(cx, cz)
 			if economy.deposits.remaining(cell) <= 0:
