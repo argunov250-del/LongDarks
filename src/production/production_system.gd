@@ -84,7 +84,7 @@ func progress_fraction(id: int) -> float:
 ## Не нужен: пауза, ждёт склад/сырьё, цикл дошёл до конца.
 func needs_worker(id: int) -> bool:
 	var s := get_state(id)
-	if s.is_empty() or s["paused"]:
+	if s.is_empty() or s["paused"] or not construction.get_building(id).operational():
 		return false
 	if s["phase"] == RUNNING:
 		return s["progress"] < _duration(s)
@@ -226,7 +226,7 @@ func tick(sim: Simulation, dt: float) -> void:
 		return
 	var work := dt * Recipes.WORKER_RATE
 	for b: Building in construction.buildings.values():
-		if b.is_done() and Recipes.is_production(b.type):
+		if b.operational() and Recipes.is_production(b.type):  # горит/повреждено/в воде — стоит
 			_tick_building(b, _ext_work.get(b.id, 0.0) if external_work else work)
 	_ext_work.clear()
 

@@ -9,6 +9,8 @@ const CACHE_MAX := 4096
 var world: WorldMap
 var _grid: AStarGrid2D
 var _sig := ""
+## Временно непроходимые клетки (паводок): индекс клетки -> true. Меняется set_blocked_cells.
+var blocked: Dictionary = {}
 var _cache: Dictionary = {}   # int ключ -> Array[Vector2i] (пустой — недостижимо)
 
 
@@ -31,7 +33,7 @@ func _ensure() -> void:
 	_grid.update()
 	for cz in world.size:
 		for cx in world.size:
-			if not _walkable(cx, cz):
+			if not _walkable(cx, cz) or blocked.has(cz * world.size + cx):
 				_grid.set_point_solid(Vector2i(cx, cz), true)
 
 
@@ -39,8 +41,21 @@ func _walkable(cx: int, cz: int) -> bool:
 	return not WorldMap.is_water_type(world.cell_type(cx, cz))
 
 
+## Задаёт временно закрытые клетки (индекс -> true); кэш путей сбрасывается.
+func set_blocked_cells(cells: Dictionary) -> void:
+	if _grid != null:
+		for i in blocked:
+			if not cells.has(i):
+				var c := Vector2i(i % world.size, i / world.size)
+				_grid.set_point_solid(c, not _walkable(c.x, c.y))
+		for i in cells:
+			_grid.set_point_solid(Vector2i(i % world.size, i / world.size), true)
+	blocked = cells.duplicate()
+	_cache.clear()
+
+
 func is_walkable_cell(c: Vector2i) -> bool:
-	return c.x >= 0 and c.y >= 0 and c.x < world.size and c.y < world.size and _walkable(c.x, c.y)
+	return c.x >= 0 and c.y >= 0 and c.x < world.size and c.y < world.size and _walkable(c.x, c.y) and not blocked.has(c.y * world.size + c.x)
 
 
 func is_walkable(p: Vector3) -> bool:

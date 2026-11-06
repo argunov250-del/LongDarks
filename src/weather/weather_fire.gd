@@ -23,6 +23,7 @@ var buildings: Dictionary = {}   # int id здания -> Dictionary
 var revision: int = 0
 var burn_time: float = WeatherDefs.BURN_TIME
 var spread_interval: float = WeatherDefs.SPREAD_INTERVAL
+var ignite_chance: float = WeatherDefs.IGNITE_CHANCE
 var spread_chance: float = WeatherDefs.SPREAD_CHANCE
 var max_cells: int = WeatherDefs.MAX_BURN_CELLS
 var building_reach: float = WeatherDefs.BUILDING_FIRE_REACH

@@ -25,6 +25,7 @@ const TOPIC_RUIN_RESTORED := &"ruin_restored"
 const TOPIC_RUIN_DISMANTLED := &"ruin_dismantled"
 const TOPIC_CANCELLED := &"building_cancelled"
 const TOPIC_FELLED := &"cell_felled"  # клетка леса вырублена: {"cell": Vector2i}
+const TOPIC_REPAIRED := &"building_repaired"  # после пожара: {"id"}
 const TOPIC_CHANGED := &"construction_changed"  # состав зданий/руин изменился
 
 var world: WorldMap
@@ -34,6 +35,8 @@ var ruins: Dictionary = {}          # int ruin id -> {"id","cell":Vector2i,"pos"
 ## Хуки сезонов/погоды (SeasonSystem). Не сохраняются: их выставляет внешняя система.
 var ground_frozen: bool = false     # блокирует СТАРТ стадии фундамента
 var build_speed_multiplier: float = 1.0
+## ХУК ПАВОДКА (WeatherSystem): Callable(Vector2i клетка) -> bool, клетка затоплена. Не сохраняется.
+var flood_check: Callable = Callable()
 ## true: плейсхолдерная работа отключена, работу вносят жители через add_work().
 var external_work: bool = false
 
@@ -43,7 +46,7 @@ var _fell: Dictionary = {}          # int индекс клетки леса -> 
 var _fell_blocked := false          # хотя бы одна вырубка ждёт места на складах
 var _next_id: int = 1
 var _sim: Simulation
-var _ext := {&"build": {}, &"fell": {}, &"dismantle": {}}  # вид -> {id: работа за тик}
+var _ext := {&"build": {}, &"fell": {}, &"dismantle": {}, &"repair": {}}  # вид -> {id: работа за тик}
 
 
 func _init(world_in: WorldMap, economy_in: EconomySystem) -> void:
@@ -158,6 +161,8 @@ func validate_placement(type: StringName, pos: Vector3, rot: float, ignore_id: i
 		for p in pts:
 			if world.is_water(p.x, p.y):
 				return {"ok": false, "reason": &"water"}
+			if flood_check.is_valid() and is_flooded_cell(world.cell_of(p.x, p.y)):
+				return {"ok": false, "reason": &"flood"}
 			var h := world.height_at(p.x, p.y)
 			lo = minf(lo, h)
 			hi = maxf(hi, h)
@@ -175,6 +180,40 @@ func validate_placement(type: StringName, pos: Vector3, rot: float, ignore_id: i
 				if Footprint.overlaps(np["c"], np["size"], rot, op["c"], op["size"], b.rot, BuildingDefs.BUILD_GAP):
 					return {"ok": false, "reason": &"overlap"}
 	return {"ok": true, "reason": &""}
+
+
+## Клетка затоплена (нет хука — нет).
+func is_flooded_cell(c: Vector2i) -> bool:
+	return flood_check.is_valid() and bool(flood_check.call(c))
+
+
+## Все клетки карты, которых касается прямоугольник (независимо от типа местности).
+func footprint_cells(c: Vector2, size: Vector2, rot: float) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var pts := Footprint.corners(c, size, rot)
+	var lo := pts[0]
+	var hi := pts[0]
+	for p in pts:
+		lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.y))
+		hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.y))
+	var a := world.cell_of(lo.x, lo.y)
+	var z := world.cell_of(hi.x, hi.y)
+	var cs := world.cell_size
+	for cz in range(a.y, z.y + 1):
+		for cx in range(a.x, z.x + 1):
+			if Footprint.overlaps(c, size, rot, Vector2((cx + 0.5) * cs, (cz + 0.5) * cs), Vector2(cs, cs), 0.0, 0.0):
+				out.append(Vector2i(cx, cz))
+	return out
+
+
+## Основание здания стоит в воде паводка.
+func building_flooded(b: Building) -> bool:
+	if not flood_check.is_valid():
+		return false
+	for c in footprint_cells(b.xz(), b.size(), b.rot):
+		if is_flooded_cell(c):
+			return true
+	return false
 
 
 ## Клетки леса с деревьями под основанием.
@@ -450,7 +489,7 @@ func open_dismantles() -> Array[int]:
 
 
 ## Работа жителя на объекте. kind: &"build" (id здания), &"fell" (индекс клетки),
-## &"dismantle" (id руины). Учитывает build_speed_multiplier. Без external_work игнорируется.
+## &"dismantle" (id руины), &"repair" (id повреждённого здания). Учитывает build_speed_multiplier. Без external_work игнорируется.
 func add_work(kind: StringName, id: int, amount: float) -> void:
 	if not external_work or amount <= 0.0 or not _ext.has(kind):
 		return
@@ -512,6 +551,9 @@ func tick(sim: Simulation, dt: float) -> void:
 	for b: Building in buildings.values():
 		if not b.is_done():
 			_advance(b, _work_for(&"build", b.id, work))  # и при 0: оплата стадии/причина простоя
+	for b: Building in buildings.values():
+		if b.damaged and not b.burning:
+			_advance_repair(b, _work_for(&"repair", b.id, work))
 	for rid in _jobs.keys():
 		_jobs[rid] = minf(_jobs[rid] + _work_for(&"dismantle", rid, work), BuildingDefs.DISMANTLE_WORK)
 		if _jobs[rid] >= BuildingDefs.DISMANTLE_WORK:
@@ -521,7 +563,27 @@ func tick(sim: Simulation, dt: float) -> void:
 		(_ext[k] as Dictionary).clear()
 
 
+## Ремонт повреждённого пожаром здания: материалы списываются раз, затем работа.
+func _advance_repair(b: Building, work: float) -> void:
+	if not b.repair_paid:
+		if not economy.consume(b.repair_cost()):
+			b.blocked = &"resources"
+			return
+		b.repair_paid = true
+	b.blocked = &""
+	b.repair_progress += work
+	if b.repair_progress >= b.repair_work():
+		b.damaged = false
+		b.repair_paid = false
+		b.repair_progress = 0.0
+		_emit(TOPIC_REPAIRED, {"id": b.id})
+		_emit(TOPIC_CHANGED, {})
+
+
 func _advance(b: Building, work: float) -> void:
+	if building_flooded(b):
+		b.blocked = &"flood"
+		return
 	var guard := 0
 	while not b.is_done() and guard < 8:
 		guard += 1

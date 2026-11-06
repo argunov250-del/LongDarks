@@ -16,6 +16,12 @@ var _season: StringName = SeasonDefs.SPRING
 var _sim: Simulation
 var _acc: float = APPLY_INTERVAL
 
+## ХУКИ ПОГОДЫ (WeatherSystem, шаг 14): добавка к температуре и множители поверх сезонных.
+var weather_temp_offset: float = 0.0
+var weather_build_multiplier: float = 1.0
+var weather_walk_multiplier: float = 1.0
+var weather_mud_floor: float = 0.0
+
 var economy: EconomySystem
 var construction: ConstructionSystem
 var villagers: VillagerSystem
@@ -192,7 +198,7 @@ func hour() -> float:
 func outdoor_temp() -> float:
 	var swing: float = blend(SeasonDefs.DAY_SWING)
 	var day := cos((_hour() - SeasonDefs.DAY_PEAK_HOUR) / 24.0 * TAU)
-	return base_temp() + swing * day + weather_noise()
+	return base_temp() + swing * day + weather_noise() + weather_temp_offset
 
 
 ## Печи топят при +5 °C и ниже.
@@ -207,9 +213,10 @@ func ground_frozen() -> bool:
 
 func build_speed_multiplier() -> float:
 	var t := outdoor_temp()
-	if t >= 0.0:
-		return 1.0
-	return lerpf(1.0, SeasonDefs.FROST_BUILD_MIN, clampf(t / SeasonDefs.FROST_BUILD_FULL_TEMP, 0.0, 1.0))
+	var k := 1.0
+	if t < 0.0:
+		k = lerpf(1.0, SeasonDefs.FROST_BUILD_MIN, clampf(t / SeasonDefs.FROST_BUILD_FULL_TEMP, 0.0, 1.0))
+	return k * weather_build_multiplier
 
 
 func consumption_multiplier() -> float:
@@ -220,15 +227,15 @@ func consumption_multiplier() -> float:
 ## Распутица 0..1 (весна). ХУК для техники: она будет вязнуть пропорционально.
 func mud_level() -> float:
 	if _season != SeasonDefs.SPRING:
-		return 0.0
+		return weather_mud_floor
 	var p := progress()
 	var up := smoothstep(0.0, SeasonDefs.MUD_RAMP_IN, p)
 	var down := 1.0 - smoothstep(SeasonDefs.MUD_PEAK_END, 1.0, p)
-	return up * down
+	return maxf(up * down, weather_mud_floor)
 
 
 func walk_speed_multiplier() -> float:
-	return 1.0 - SeasonDefs.MUD_WALK_SLOW * mud_level()
+	return (1.0 - SeasonDefs.MUD_WALK_SLOW * mud_level()) * weather_walk_multiplier
 
 
 ## Снежный покров 0..1 (визуал): зима 1, весной тает, осенью возвращается.

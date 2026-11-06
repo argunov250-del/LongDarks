@@ -12,11 +12,41 @@ var progress: float = 0.0        # выполненная работа теку�
 var restored: bool = false       # восстановлено из руин (дешевле)
 var host_id: int = 0             # сарай: id дома, во дворе которого он стоит (0 — нет)
 var storage_id: int = 0          # склад/погреб в EconomySystem (0 — нет)
-var blocked: StringName = &""    # &"" | &"resources" | &"frozen" — почему стадия стоит
+var blocked: StringName = &""    # &"" | &"resources" | &"frozen" | &"flood" — почему стадия стоит
+## Погода (шаг 14). burning/flooded — рабочие флаги (WeatherSystem пересчитывает), damaged и ремонт сохраняются.
+var burning: bool = false        # горит: не работает
+var flooded: bool = false        # стоит в воде паводка: не работает
+var damaged: bool = false        # не потушили: не работает, пока жители не отремонтируют
+var repair_paid: bool = false    # материалы ремонта списаны
+var repair_progress: float = 0.0 # выполненная работа ремонта
 
 
 func is_done() -> bool:
 	return stage >= BuildingDefs.Stage.DONE
+
+
+## Здание готово и работает (не горит, не повреждено, не затоплено).
+func operational() -> bool:
+	return is_done() and not burning and not damaged and not flooded
+
+
+## Цена ремонта поврежденного здания: доля полной цены (округление вверх).
+func repair_cost() -> Dictionary:
+	var out := {}
+	var total := BuildingDefs.total_cost(type, cost_factor())
+	for k in total:
+		var n := int(ceil(float(total[k]) * WeatherDefs.REPAIR_COST_FRACTION - 0.0001))
+		if n > 0:
+			out[k] = n
+	return out
+
+
+## Работа ремонта: доля суммарной работы стадий.
+func repair_work() -> float:
+	var w := 0.0
+	for s in BuildingDefs.Stage.DONE:
+		w += BuildingDefs.stage_work(type, s, work_factor())
+	return maxf(1.0, w * WeatherDefs.REPAIR_WORK_FRACTION)
 
 
 func size() -> Vector2:
@@ -62,6 +92,7 @@ func to_dict() -> Dictionary:
 		"pos": [position.x, position.y, position.z], "rot": rot,
 		"stage": stage, "paid": stage_paid, "progress": progress,
 		"restored": restored, "storage_id": storage_id, "host": host_id,
+		"damaged": damaged, "rpaid": repair_paid, "rprog": repair_progress,
 	}
 
 
@@ -79,4 +110,7 @@ static func from_dict(d: Dictionary) -> Building:
 	b.restored = bool(d.get("restored", false))
 	b.storage_id = SaveManager.to_int(d.get("storage_id"), 0)
 	b.host_id = SaveManager.to_int(d.get("host"), 0)
+	b.damaged = bool(d.get("damaged", false))
+	b.repair_paid = bool(d.get("rpaid", false))
+	b.repair_progress = float(d.get("rprog", 0.0))
 	return b

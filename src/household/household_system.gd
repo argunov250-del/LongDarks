@@ -26,6 +26,15 @@ var consumption_multiplier: float = 1.0
 var simulate_heat: bool = true
 ## Календарь (шаг 13): null — сезонов нет, огород без ограничений (старые тесты).
 var seasons: SeasonSystem = null
+## ХУКИ ПОГОДЫ (WeatherSystem, шаг 14). weather — источник плодородия (null — нет).
+var weather: WeatherSystem = null
+var garden_growth_multiplier: float = 1.0   # рост огорода (дождь > 1, засуха 0)
+var garden_dry_rate: float = 0.0            # убыль прогресса неполитой грядки (доля скорости роста)
+var well_work_multiplier: float = 1.0       # во сколько раз дольше наполнение вёдер (засуха)
+var water_decay_multiplier: float = 1.0     # убыль воды у жителей (жара)
+var shelter_required: bool = false          # жители идут домой (метель, ураган, гроза)
+var exposure_warmth_mult: float = 1.0       # тепло на улице убывает быстрее
+var exposure_health_drain: float = 0.0      # здоровье/сутки у застигнутых на улице
 
 var _sim: Simulation
 
@@ -201,7 +210,7 @@ func nearest_well(from: Vector3) -> int:
 	var bd := INF
 	for id in construction.buildings:
 		var b: Building = construction.buildings[id]
-		if b.is_done() and BuildingDefs.is_well(b.type):
+		if b.operational() and BuildingDefs.is_well(b.type):
 			var d := Vector2(b.position.x - from.x, b.position.z - from.z).length()
 			if d < bd:
 				bd = d
@@ -275,7 +284,17 @@ func harvest(id: int) -> Dictionary:
 	h.garden_progress = 0.0
 	var i := HouseholdDefs.GARDEN_CROPS.find(crop)
 	h.garden_crop = HouseholdDefs.GARDEN_CROPS[(i + 1) % HouseholdDefs.GARDEN_CROPS.size()]
-	return {"res": crop, "n": HouseholdDefs.GARDEN_YIELD}
+	return {"res": crop, "n": garden_yield(id)}
+
+
+## Урожай за цикл: GARDEN_YIELD * (1 + плодородие клетки огорода) (выгоревший лес удобряет почву).
+func garden_yield(id: int) -> int:
+	var b := construction.get_building(id)
+	if weather == null or b == null:
+		return HouseholdDefs.GARDEN_YIELD
+	var p := garden_pos(b)
+	var f := weather.fertility_at(construction.world.cell_of(p.x, p.z))
+	return roundi(float(HouseholdDefs.GARDEN_YIELD) * (1.0 + f * WeatherDefs.GARDEN_YIELD_FERTILITY))
 
 
 # ---------- сарай ----------
@@ -333,7 +352,7 @@ func tick(sim: Simulation, dt: float) -> void:
 	for id in homes:
 		var h: Household = homes[id]
 		if h.garden_state == Household.GARDEN_GROWING and HouseholdDefs.garden_season_allows(season, &"grow"):
-			h.garden_progress += dt
+			h.garden_progress = maxf(0.0, h.garden_progress + dt * (garden_growth_multiplier - garden_dry_rate))
 			if h.garden_progress >= HouseholdDefs.GARDEN_GROW_TIME:
 				h.garden_state = Household.GARDEN_RIPE
 		if h.barn:

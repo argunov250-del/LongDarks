@@ -4,7 +4,7 @@ extends RefCounted
 ## лечение, смерть и выбор «нужных дел» (поесть, попить, лечь, лечиться), которые
 ## приоритетнее работы. Принадлежит VillagerSystem (vs.needs). Баланс — NeedsDefs.
 
-const KINDS: Array[StringName] = [&"eat", &"drink", &"sleep", &"warm", &"heal", &"treat", &"stoke"]
+const KINDS: Array[StringName] = [&"eat", &"drink", &"sleep", &"warm", &"heal", &"treat", &"stoke", &"shelter", &"extinguish"]
 
 var vs: VillagerSystem
 var _home_acc := 1.0e9
@@ -113,6 +113,14 @@ func at_home(v: Villager) -> bool:
 	return d != null and Vector2(d.x - v.pos.x, d.z - v.pos.z).length() <= NeedsDefs.HOME_AREA_RADIUS
 
 
+## Житель под крышей: дома (с двором), в больнице или в столовой за делом.
+func indoors(v: Villager) -> bool:
+	if at_home(v):
+		return true
+	var kind: StringName = v.task.get("kind", &"")
+	return v.at_site and (kind == &"heal" or kind == &"treat" or ((kind == &"eat" or kind == &"drink") and v.task.get("dest", &"") == &"canteen"))
+
+
 ## Тепло среды вокруг жителя сейчас: дома — тепло дома, в столовой/больнице — без отопления, на улице — погода.
 func ambient_warmth(v: Villager) -> float:
 	var hs := vs.household
@@ -177,10 +185,13 @@ func _tick_one(v: Villager, dt: float, days: float, staff: Dictionary) -> void:
 	# убыль и восполнение
 	var slow := NeedsDefs.SLEEP_DECAY_MULT if resting else 1.0
 	v.set_need(NeedsDefs.FOOD, v.need(NeedsDefs.FOOD) - NeedsDefs.FOOD_DECAY_PER_DAY * NeedsDefs.cold_factor(NeedsDefs.FOOD, cold) * mult * slow * days)
-	v.set_need(NeedsDefs.WATER, v.need(NeedsDefs.WATER) - NeedsDefs.WATER_DECAY_PER_DAY * mult * slow * days)
+	v.set_need(NeedsDefs.WATER, v.need(NeedsDefs.WATER) - NeedsDefs.WATER_DECAY_PER_DAY * mult * hs.water_decay_multiplier * slow * days)
 	var amb := ambient_warmth(v)
 	var w := v.need(NeedsDefs.WARMTH)
 	var wrate := NeedsDefs.WARMTH_RATE_PER_DAY * (NeedsDefs.cold_factor(NeedsDefs.WARMTH, cold) * mult if amb < w else 1.0)
+	var exposed := (hs.exposure_warmth_mult > 1.0 or hs.exposure_health_drain > 0.0) and not indoors(v)
+	if exposed and amb < w:
+		wrate *= hs.exposure_warmth_mult
 	v.set_need(NeedsDefs.WARMTH, move_toward(w, amb, wrate * days))
 	if resting:
 		var k := 1.0 if v.home_id > 0 and (at_home(v) or kind == &"heal") else NeedsDefs.HOMELESS_REST_MULT
@@ -195,6 +206,8 @@ func _tick_one(v: Villager, dt: float, days: float, staff: Dictionary) -> void:
 		var x := v.need(n)
 		if x < NeedsDefs.CRITICAL_NEED:
 			drain += NeedsDefs.STARVE_DRAIN_PER_DAY * (1.0 - x / NeedsDefs.CRITICAL_NEED)
+	if exposed:
+		drain += hs.exposure_health_drain  # застигнуты непогодой на улице
 	if v.sick and not treated:
 		drain += NeedsDefs.SICK_DRAIN_PER_DAY
 	if drain > 0.0:
@@ -285,14 +298,59 @@ func job_for(v: Villager) -> Dictionary:
 		if bed > 0:
 			return _job(&"heal", bed, &"hospital")
 		return _job(&"sleep", maxi(v.home_id, 0), &"home")
+	var fj := fire_job_for(v)
+	if not fj.is_empty():
+		return fj
 	if _wants_sleep(v, cur):
 		return _job(&"sleep", maxi(v.home_id, 0), &"home")
 	if v.home_id > 0 and stoke_wanted(v.home_id) and (cur == &"stoke" or not _stoker_busy(v.home_id, v)):
 		return _job(&"stoke", v.home_id, &"stove")
+	if hs.shelter_required and not indoors(v):
+		var hb := vs.construction.get_building(v.home_id) if v.home_id > 0 else null
+		var ok := hb != null and hb.is_done() and not hb.burning and not hb.flooded
+		return _job(&"shelter", v.home_id if ok else 0, &"home")  # бездомный стоит на месте
 	if v.home_id > 0 and (v.need(NeedsDefs.WARMTH) < NeedsDefs.WARM_BELOW or (cur == &"warm" and v.need(NeedsDefs.WARMTH) < NeedsDefs.WARM_DONE)):
 		if hs.house_warmth(v.home_id) > v.need(NeedsDefs.WARMTH) + 0.1:
 			return _job(&"warm", v.home_id, &"home")
 	return {}
+
+
+## Тушение: ближайший очаг, которому ещё не хватает воды (с учётом несущих), если есть колодец.
+## Пока идёт укрытие от непогоды — только горящие здания. {} — тушить нечего.
+func fire_job_for(v: Villager) -> Dictionary:
+	var w := vs.weather
+	if w == null or w.fire.is_empty() or v.arriving:
+		return {}
+	var hs := vs.household
+	if hs.nearest_well(v.pos) < 0:
+		return {}
+	var cur_key: String = v.task.get("key", "")
+	var best := {}
+	var bd := INF
+	var targets: Array = []
+	for id in w.fire.buildings:
+		targets.append([&"building", id])
+	if not hs.shelter_required:
+		for i in w.fire.cells:
+			targets.append([&"cell", i])
+	for t in targets:
+		var dest: StringName = t[0]
+		var tid: int = t[1]
+		var key := "n:extinguish:%s:%d" % [dest, tid]
+		var pending := 0
+		for o: Villager in vs.villagers.values():
+			if o != v and o.task.get("kind", &"") == &"extinguish" and int(o.task.get("target", 0)) == tid and o.task.get("dest", &"") == dest:
+				pending += HouseholdDefs.WATER_CARRY
+		if key != cur_key and w.fire.water_left(dest, tid) - pending <= 0:
+			continue
+		var p = w.fire.target_pos(dest, tid)
+		if p == null:
+			continue
+		var d := Vector2(p.x - v.pos.x, p.z - v.pos.z).length() - (1000.0 if dest == &"building" else 0.0) - (500.0 if key == cur_key else 0.0)
+		if d < bd:
+			bd = d
+			best = {"key": key, "cat": &"", "kind": &"extinguish", "target": tid, "dest": dest}
+	return best
 
 
 func _wants_sleep(v: Villager, cur: StringName) -> bool:
