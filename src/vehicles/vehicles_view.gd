@@ -24,6 +24,7 @@ func setup(vs_in: VehicleSystem, world_in: WorldMap, sim: Simulation) -> void:
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.roughness = 1.0
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.vertex_color_is_srgb = true
 	_overlay.material_override = m
 	add_child(_overlay)
 
@@ -204,7 +205,7 @@ func rebuild_trails() -> void:
 			verts.append(Vector3(x, _h(x, z), z))
 			cols.append(col)
 			norms.append(Vector3.UP)
-		idx.append_array([b, b + 2, b + 1, b, b + 3, b + 2])
+		idx.append_array([b, b + 1, b + 2, b, b + 2, b + 3])
 	var cs := world.cell_size
 	layer_counts = {"foot": 0, "ruts": 0, "roads": 0}
 	for i in tm.roads:
@@ -236,7 +237,7 @@ func rebuild_trails() -> void:
 		if snow > 0.5:
 			col = Color(0.78, 0.82, 0.88, 0.5 + 0.4 * lv)
 		for side in [-1.0, 1.0]:
-			quad.call(c.x - az * side * 0.45, c.z + ax * side * 0.45, ax, az, cs * 0.5, 0.17, col)
+			quad.call(c.x - az * side * 0.45, c.z + ax * side * 0.45, ax, az, cs * 0.5, 0.24, col)
 		layer_counts["ruts"] += 1
 	if verts.is_empty():
 		_overlay.mesh = null
