@@ -2,10 +2,12 @@ class_name NeedsDefs
 extends RefCounted
 ## Физические потребности жителей (шаг 11): ВЕСЬ баланс (плейсхолдеры) — одно место.
 ## Потребность 0..1 (1 — всё хорошо): еда, вода, тепло, отдых, здоровье.
-## Скорости заданы «за игровые сутки» (длина суток — GameClock.day_length_usec).
+## Скорости «в сутки»: расход (еда, вода, тепло, здоровье, болезни, дрова) — за «сутки скоростей»
+## GameClock.rate_day_usec (1440 с, не зависят от длины суток цикла); сон и усталость — за сутки
+## цикла GameClock.day_length_usec (150 с), чтобы ночь восстанавливала отдых.
 ##
-## ХУКИ (позже):
-##  - сезоны/погода: VillagerSystem.set_outdoor_cold(0..1) и set_consumption_multiplier(x);
+## ХУКИ:
+##  - сезоны/погода (шаг 13, SeasonSystem): outdoor_cold из температуры, consumption_multiplier зимой выше;
 ##  - ссоры/уход к соседям: VillagerSystem.suffering(v) (0..1, сводная «нужда»), событие TOPIC_SICK/TOPIC_DIED;
 ##  - психика (дружба, семья, надежда, досуг) — отдельным шагом; общая трапеза: HOOK_SHARED_MEAL.
 
@@ -37,7 +39,7 @@ const WATER_DECAY_PER_DAY := 1.8
 const REST_DECAY_WORK := 1.0       # устают на работе (на объекте)
 const REST_DECAY_IDLE := 0.6       # в пути и без дела
 const SLEEP_DECAY_MULT := 0.5      # во сне еда и вода убывают медленнее
-const SLEEP_RESTORE_PER_DAY := 3.0 # сон дома (8 ч ≈ +1.0)
+const SLEEP_RESTORE_PER_DAY := 3.0 # сон дома (8 ч ≈ +1.0), за сутки цикла
 const HOMELESS_REST_MULT := 0.4    # сон без дома восстанавливает хуже
 const HOMELESS_WARMTH_PENALTY := 0.1  # без дома теплее некуда: сквозняк и сырость
 
@@ -54,7 +56,7 @@ const FOOD_VALUE := {&"meat": 0.5, &"fish": 0.45, &"eggs": 0.35, &"milk": 0.3, &
 const HOOK_SHARED_MEAL := false    # ХУК (психика): общая трапеза в столовой даст бонус настроения
 
 # ---------- тепло ----------
-const DEFAULT_OUTDOOR_COLD := 0.35 # 0 — тепло, 1 — лютый мороз; хук сезонов
+const DEFAULT_OUTDOOR_COLD := 0.35 # 0 — тепло, 1 — лютый мороз; без календаря (SeasonSystem выставляет сам)
 const MILD_COLD := 0.35            # «обычный» холод: выше него растёт расход (зима)
 ## Дополнительный расход при максимальном морозе (множитель = 1 + extra * доля превышения MILD_COLD).
 const COLD_EXTRA_FOOD := 0.5
