@@ -464,7 +464,19 @@ func vehicle_card_text(v: Vehicle) -> String:
 	elif v.assigned_driver != 0 and villagers.get_villager(v.assigned_driver) != null:
 		drv = villagers.get_villager(v.assigned_driver).display_name + " (назначен)"
 	var cargo := "пусто" if v.cargo_n <= 0 else "%s x%d" % [ResourceDefs.display_name(v.cargo_res), v.cargo_n]
-	return "%s\nТип: %s. %s\nСостояние: %d%%  Топливо: %d/%d л\nВодитель: %s\nГруз: %s" % [v.display_name, VehicleDefs.type_name(v.type), vehicles.status_text(v), roundi(v.condition * 100.0), roundi(v.fuel), roundi(v.tank()), drv, cargo]
+	var parts := vehicles.part_summary(v).map(func(e: Dictionary) -> String: return "%s: %s" % [e["name"], e["word"]])
+	return "%s\nТип: %s. %s\n%s\nТопливо: %d/%d л  Водитель: %s\nГруз: %s" % [v.display_name, VehicleDefs.type_name(v.type), vehicles.status_text(v), " · ".join(parts), roundi(v.fuel), roundi(v.tank()), drv, cargo]
+
+
+## Card colour by the worst part (step 19): green / yellow / red.
+func vehicle_card_tint(v: Vehicle) -> Color:
+	var worst := &"ok"
+	for e in vehicles.part_summary(v):
+		if e["state"] == &"broken":
+			worst = &"broken"
+		elif e["state"] == &"worn" and worst != &"broken":
+			worst = &"worn"
+	return VehicleDefs.PART_COLORS[worst]
 
 
 func _cycle_driver(v: Vehicle) -> void:
@@ -502,7 +514,7 @@ func _show_info() -> void:
 		if sv == null:
 			clear_selection()
 			return
-		hud.show_actions(vehicle_card_text(sv), [[&"veh_driver", "Водитель", true], [&"veh_repair", "В ремонт", sv.needs_repair()], [&"close", "Закрыть", true]])
+		hud.show_actions(vehicle_card_text(sv), [[&"veh_driver", "Водитель", true], [&"veh_repair", "В ремонт", sv.needs_repair()], [&"close", "Закрыть", true]], vehicle_card_tint(sv))
 		return
 	if selected_villager >= 0:
 		var v := villagers.get_villager(selected_villager) if villagers != null else null

@@ -173,8 +173,12 @@ func _on_build_item(id: StringName) -> void:
 
 ## Панель действий: заголовок + кнопки [id, текст, включена]. Если набор id не
 ## изменился, обновляются только тексты/состояния (нажатие не прерывается).
-func show_actions(title: String, actions: Array) -> void:
+func show_actions(title: String, actions: Array, tint: Color = Color(0, 0, 0, 0)) -> void:
 	_bar_label.text = title
+	if tint.a > 0.0:
+		_bar_label.add_theme_color_override("font_color", tint)
+	else:
+		_bar_label.remove_theme_color_override("font_color")
 	var ids: Array = []
 	for a in actions:
 		ids.append(a[0])

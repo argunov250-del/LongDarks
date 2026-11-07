@@ -235,3 +235,33 @@ func test_panel_shows_words_not_numbers() -> void:
 	assert_eq(panel.line_text(v), "Бурун-5 — мотор: сломан · шины: исправны · аккумулятор: изношен")
 	assert_eq(panel.rows.size(), 1)
 	panel.free()
+
+
+func test_tap_vehicle_card_shows_part_words_and_toast_via_hud() -> void:
+	var r := VehEnv.new()
+	var v := r.spawn(&"truck")
+	v.set_part(&"engine", 0.05)
+	var hud: Hud = load("res://scenes/ui/hud.tscn").instantiate()
+	hud.sim = r.e.sim
+	(Engine.get_main_loop() as SceneTree).root.add_child(hud)
+	if not hud.is_node_ready():
+		hud._ready()
+	hud.bind_villagers(r.e.vs)
+	hud.bind_vehicles(r.e.sim)
+	var bc := BuildController.new()
+	(Engine.get_main_loop() as SceneTree).root.add_child(bc)
+	bc.setup(r.e.con, null, hud, null, r.e.sim)
+	bc.villagers = r.e.vs
+	bc.vehicles = r.vh
+	bc.select_vehicle(v.id)
+	assert_true(hud._bar_label.text.contains("мотор: сломан"), "card words: " + hud._bar_label.text)
+	assert_true(hud._bar_label.text.contains("шины: исправны"))
+	assert_false(hud._bar_label.text.contains("%"), "no numbers/percent")
+	assert_eq(hud._bar_label.get_theme_color("font_color"), VehicleDefs.PART_COLORS[&"broken"])
+	var other := r.spawn(&"pickup", 1.0, 999.0, 2)
+	r.vh.crash(other, 0.0)
+	r.vh.crash(other, 0.0)
+	r.vh.crash(other, 0.0)
+	assert_eq(hud.villagers_ui.toast_label.text, "Шмель-2 сломался", "toast through the HUD")
+	hud.free()
+	bc.free()
