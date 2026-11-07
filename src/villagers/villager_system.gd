@@ -441,6 +441,10 @@ func _build_vehicle_jobs(outdoor_ok: bool) -> void:
 		for j in vehicles.jobs():
 			_job(j["key"], TaskDefs.DRIVE, &"drive", j["target"], j["pos"], 1, dp, TaskDefs.DRIVE)
 			_job_by_key[j["key"]]["only"] = j["only"]
+	var rp := priority_of(TaskDefs.REPAIR)
+	if rp > 0:
+		for j in vehicles.field_repair_jobs():  # step 19: mechanic repairs a broken vehicle on site
+			_job(j["key"], TaskDefs.REPAIR, &"fieldfix", j["target"], j["pos"], 1, rp, TaskDefs.REPAIR)
 	var bp := priority_of(TaskDefs.BUILD)
 	if bp > 0:
 		for j in vehicles.road_jobs():
@@ -563,6 +567,8 @@ func _pick(v: Villager, use_claims: bool) -> Dictionary:
 			var only: int = job.get("only", 0)
 			if (only != 0 and only != v.id) or not vehicles.can_drive(v, vehicles.get_vehicle(job["target"])):
 				continue
+		if job["kind"] == &"fieldfix" and not vehicles.can_field_repair(v):
+			continue
 		if use_claims and _claims.get(key, 0) - (1 if key == cur else 0) >= job["cap"]:
 			continue
 		var s := _score(v, job) + (TaskDefs.STICKY_BONUS if key == cur else 0.0)
@@ -668,7 +674,7 @@ func _task_pos(v: Villager, t: Dictionary) -> Variant:
 			return construction.ruins[t["target"]]["pos"] if construction.ruins.has(t["target"]) else null
 		&"road":
 			return world.cell_center(t["target"] % world.size, t["target"] / world.size)
-		&"drive":
+		&"drive", &"fieldfix":
 			var dv := vehicles.get_vehicle(t["target"]) if vehicles != null else null
 			return dv.pos if dv != null else null
 		&"chop", &"carry", &"water", &"food", &"garden", &"stoke", &"extinguish":
@@ -700,7 +706,7 @@ func _task_radius(t: Dictionary) -> float:
 			return _building_radius(b) if b != null else 1.0
 		&"fell", &"dismantle", &"road":
 			return 1.7
-		&"drive":
+		&"drive", &"fieldfix":
 			return 2.5
 		&"chop", &"carry", &"water", &"food", &"garden", &"stoke", &"extinguish":
 			return _haul_radius(t)
@@ -1004,6 +1010,12 @@ func _work(v: Villager, t: Dictionary, dt: float) -> void:
 		&"road":
 			vehicles.add_road_work(t["target"], work_rate(v, TaskDefs.BUILD) * dt * _site_mult(&"road", t["target"]))
 			train(v, TaskDefs.BUILD, dt)
+		&"fieldfix":
+			if vehicles.field_repair_work(v, t["target"], work_rate(v, TaskDefs.REPAIR) * dt):
+				train(v, TaskDefs.REPAIR, dt)
+			else:
+				_jobs_dirty = true
+				_abandon(v)
 		&"mend":
 			construction.add_work(&"repair", t["target"], work_rate(v, TaskDefs.BUILD) * dt)
 			train(v, TaskDefs.BUILD, dt)
@@ -1259,6 +1271,9 @@ func task_text(v: Villager) -> String:
 		&"drive":
 			var tv := vehicles.get_vehicle(t["target"]) if vehicles != null else null
 			txt = "Вождение: " + (tv.display_name if tv != null else "?")
+		&"fieldfix":
+			var fv := vehicles.get_vehicle(t["target"]) if vehicles != null else null
+			txt = "Чинит в поле: " + (fv.display_name if fv != null else "?")
 		&"road":
 			txt = "Строит дорогу"
 		&"fell":

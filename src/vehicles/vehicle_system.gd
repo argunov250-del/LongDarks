@@ -2,10 +2,11 @@ class_name VehicleSystem
 extends SimSystem
 ## Vehicles, drivers, roads/footpaths/ruts. Design: design/gdd/vehicles.md.
 ## A driver is a villager with a task of kind &"drive" (category «Вождение»). VillagerSystem walks him
-## to the vehicle, then calls drive_tick() every tick. Wear/breakdowns = step 19, fuel chains = step 20,
-## manual driving = step 21 (hooks: Vehicle.breakdown_rate, refuel(), assigned_driver).
+## to the vehicle, then calls drive_tick() every tick. Wear/breakdowns = step 19 (see wear section below), fuel chains = step 20,
+## manual driving = step 21 (hooks: refuel(), assigned_driver).
 
 const TOPIC_CHANGED := &"vehicles_changed"
+const TOPIC_BROKEN := &"vehicle_broken"   # {id, text} — a part broke (notification «Бурун-5 сломался»)
 enum Go { ARRIVED, MOVING, BLOCKED }
 enum Res { ONGOING, DONE, FAILED }
 
@@ -26,6 +27,7 @@ var snow_override := -1.0
 var temperature_override := NAN
 var _next_id := 1
 var _sim: Simulation
+var _field_target: Dictionary = {}     # vehicle id -> part a mechanic is patching (not saved)
 var _foot_last: Dictionary = {}        # villager id -> last cell idx
 
 
@@ -75,16 +77,33 @@ func add_vehicle(type: StringName, condition: float, fuel: float, pos: Vector3, 
 	v.pos = Vector3(pos.x, world.height_at(pos.x, pos.z), pos.z)
 	v.fuel = clampf(fuel, 0.0, v.tank())
 	vehicles[v.id] = v
-	if production != null:
-		production.register_repairable(v)
+	_register(v)
 	_emit()
 	return v
 
 
+## Registers the vehicle and each of its parts with the workshop (Repairable contract).
+func _register(v: Vehicle) -> void:
+	v.part_repairs.clear()
+	for part in VehicleDefs.PARTS:
+		v.part_repairs[part] = VehiclePartRepair.new(v, part)
+	v.sync_condition()
+	if production != null:
+		production.register_repairable(v)
+		for part in VehicleDefs.PARTS:
+			production.register_repairable(v.part_repairs[part])
+
+
+func _unregister(v: Vehicle) -> void:
+	if production != null:
+		production.unregister_repairable(v.repair_id)
+		for part in v.part_repairs:
+			production.unregister_repairable((v.part_repairs[part] as Repairable).repair_id)
+
+
 func remove_vehicle(id: int) -> void:
 	if vehicles.has(id):
-		if production != null:
-			production.unregister_repairable(vehicles[id].repair_id)
+		_unregister(vehicles[id])
 		vehicles.erase(id)
 		_emit()
 
@@ -150,6 +169,8 @@ func is_drivable(v: Vehicle) -> bool:
 
 func status_text(v: Vehicle) -> String:
 	if not v.is_repaired():
+		if v.serviceable:
+			return "Сломана: " + ", ".join(v.broken_parts().map(func(p: StringName) -> String: return VehicleDefs.part_name(p)))
 		return "Не на ходу: нужен ремонт"
 	if v.fuel <= 0.0:
 		return "Нет топлива"
@@ -200,6 +221,33 @@ func start_delay(v: Vehicle, vil: Villager = null) -> float:
 	return minf(base, VehicleDefs.START_MAX) * (1.0 - v.warm) * (1.0 - VehicleDefs.START_SKILL_RELIEF * skill)
 
 
+## Chance that one start attempt fails: frost x (weak battery, worn engine), relieved by driver skill.
+func start_fail_chance(v: Vehicle, vil: Villager = null) -> float:
+	var cold := maxf(0.0, -temperature())
+	if cold <= 0.0 or v.warm >= 0.5:
+		return 0.0
+	var weak := VehicleDefs.START_FAIL_BATTERY * (1.0 - float(v.parts[&"battery"])) + VehicleDefs.START_FAIL_ENGINE * (1.0 - float(v.parts[&"engine"]))
+	var p := cold * VehicleDefs.START_FAIL_PER_DEG * float(VehicleDefs.def(v.type)["cold"]) * (1.0 + weak)
+	var skill := vil.skill(VehicleDefs.DRIVE) if vil != null else 0.0
+	return clampf(p * (1.0 - VehicleDefs.START_FAIL_SKILL_RELIEF * skill), 0.0, VehicleDefs.START_FAIL_MAX)
+
+
+## Rolls start attempts (deterministic per vehicle counter); every attempt wears the battery
+## (more in frost). Returns the number of FAILED attempts (START_MAX_TRIES = would not start).
+func start_failures(v: Vehicle, vil: Villager = null) -> int:
+	var fails := 0
+	var cold := maxf(0.0, -temperature())
+	while fails < VehicleDefs.START_MAX_TRIES:
+		var p := start_fail_chance(v, vil)
+		var roll := world.hash01(v.id, v.start_count, 91)
+		v.start_count += 1
+		wear_part(v, &"battery", VehicleDefs.BATTERY_START_WEAR * (1.0 + cold * VehicleDefs.BATTERY_FROST_START_MULT))
+		if roll >= p:
+			break
+		fails += 1
+	return fails
+
+
 func refuel(v: Vehicle, litres: float) -> void:
 	v.fuel = clampf(v.fuel + litres, 0.0, v.tank())  # step 20 hook (fuel chains)
 
@@ -219,7 +267,7 @@ func slip_level(v: Vehicle, idx: int) -> float:
 	if snow < 0.0:
 		snow = seasons.snow_cover() if seasons != null else 0.0
 	var d := VehicleDefs.def(v.type)
-	var s := (mud * (1.0 - float(d["mud"])) + snow * (1.0 - float(d["snow"]))) * (1.0 + VehicleDefs.LOAD_SLIP * v.load_frac())
+	var s := (mud * (1.0 - float(d["mud"])) + snow * (1.0 - float(d["snow"]))) * (1.0 + VehicleDefs.LOAD_SLIP * v.load_frac()) * v.tire_slip_mult()
 	if trails.is_road(idx):
 		s *= 1.0 - VehicleDefs.ROAD_SLIP_RELIEF
 	else:
@@ -229,7 +277,7 @@ func slip_level(v: Vehicle, idx: int) -> float:
 
 ## Speed (m/s) of a vehicle on a cell with a driver.
 func speed_at(v: Vehicle, idx: int, vil: Villager) -> float:
-	var base := float(VehicleDefs.def(v.type)["speed"]) * driver_speed_mult(vil)
+	var base := float(VehicleDefs.def(v.type)["speed"]) * driver_speed_mult(vil) * v.limp_speed_mult()
 	var sp := base * (1.0 - VehicleDefs.LOAD_SPEED_LOSS * v.load_frac()) * trails.vehicle_mult(idx) * (1.0 - VehicleDefs.SLIP_SPEED_LOSS * slip_level(v, idx))
 	return maxf(sp, base * VehicleDefs.MIN_SPEED_FRAC)
 
@@ -414,9 +462,12 @@ func board(vil: Villager, v: Vehicle) -> bool:
 		return false
 	v.driver_id = vil.id
 	v.chain = 0
+	var fails := start_failures(v, vil)
+	if fails >= VehicleDefs.START_MAX_TRIES:
+		return false  # the engine would not start (weak battery in frost): try later
 	m["next"] = m["phase"]
 	m["phase"] = &"warmup"
-	m["wait"] = start_delay(v, vil)
+	m["wait"] = start_delay(v, vil) + float(fails) * VehicleDefs.START_RETRY_DELAY
 	v.mission = m
 	return true
 
@@ -566,6 +617,8 @@ func _next(v: Vehicle, _vil: Villager) -> int:
 
 func _burn_work(v: Vehicle, dt: float) -> void:
 	v.fuel = maxf(0.0, v.fuel - float(VehicleDefs.def(v.type)["work_fuel"]) * dt)
+	if float(VehicleDefs.def(v.type)["work_fuel"]) > 0.0:
+		wear_part(v, &"engine", VehicleDefs.ENGINE_WORK_WEAR_PER_S * dt)
 
 
 ## Moves along the path: speed by terrain/load/driver, fuel per km, slip -> stuck, ruts form.
@@ -605,12 +658,13 @@ func _drive_to(v: Vehicle, vil: Villager, goal: Vector3, radius: float, dt: floa
 		budget -= use
 		moved += use
 		v.moving = true
+	var y0 := v.pos.y
 	v.pos.y = world.height_at(v.pos.x, v.pos.z)
-	_after_move(v, idx, moved)
+	_after_move(v, idx, moved, vil, absf(v.pos.y - y0) / maxf(moved, 0.001))
 	return Go.MOVING
 
 
-func _after_move(v: Vehicle, from_idx: int, dist: float) -> void:
+func _after_move(v: Vehicle, from_idx: int, dist: float, vil: Villager = null, grade: float = 0.0) -> void:
 	if dist <= 0.0:
 		return
 	v.odometer += dist
@@ -622,6 +676,152 @@ func _after_move(v: Vehicle, from_idx: int, dist: float) -> void:
 	if v.stuck_acc >= 1.0:
 		v.stuck_acc = 0.0
 		v.stuck_left = VehicleDefs.STUCK_TIME
+	apply_wear(v, i, dist)
+	var skill := vil.skill(VehicleDefs.DRIVE) if vil != null else 0.0
+	v.accident_rolls += 1
+	if world.hash01(v.id, v.accident_rolls, 93) < accident_chance(v, dist, grade, slip_level(v, i), skill):
+		crash(v, skill)
+
+
+# ---------- step 19: wear, accidents, breakdowns ----------
+
+## Lowers a part (never below 0) and announces a fresh breakdown.
+func wear_part(v: Vehicle, part: StringName, amount: float) -> void:
+	if amount <= 0.0:
+		return
+	v.set_part(part, float(v.parts[part]) - amount)
+	_check_broken(v)
+
+
+## Wear for `dist` metres on cell idx: engine (km, overload), tyres (slip, off-road), battery (km).
+func apply_wear(v: Vehicle, idx: int, dist: float) -> void:
+	var km := dist / 1000.0
+	var over := maxf(0.0, v.load_frac() - VehicleDefs.ENGINE_OVERLOAD_FROM) / (1.0 - VehicleDefs.ENGINE_OVERLOAD_FROM)
+	wear_part(v, &"engine", km * VehicleDefs.ENGINE_WEAR_PER_KM * (1.0 + VehicleDefs.ENGINE_OVERLOAD_MULT * over))
+	var terrain := 1.0 + VehicleDefs.TIRE_SLIP_MULT * slip_level(v, idx)
+	if trails.is_road(idx):
+		terrain *= VehicleDefs.TIRE_ROAD_MULT
+	elif trails.rut_level(idx) < 0.3:
+		terrain += VehicleDefs.TIRE_OFFROAD_MULT
+	wear_part(v, &"tires", km * VehicleDefs.TIRE_WEAR_PER_KM * terrain)
+	wear_part(v, &"battery", km * VehicleDefs.BATTERY_WEAR_PER_KM)
+
+
+## Accident chance for a stretch of `dist` m: slope, overload (worse on slopes), slipping,
+## novice driver (skill hook), worn tyres.
+func accident_chance(v: Vehicle, dist: float, grade: float, slip: float, skill: float) -> float:
+	var slope := clampf(grade / VehicleDefs.MAX_SLOPE, 0.0, 1.0)
+	var p := dist / 1000.0 * VehicleDefs.ACCIDENT_BASE_PER_KM
+	p *= 1.0 + VehicleDefs.ACCIDENT_SLOPE_GAIN * slope
+	p *= 1.0 + VehicleDefs.ACCIDENT_OVERLOAD_GAIN * v.load_frac() * (1.0 + 2.0 * slope)
+	p *= 1.0 + VehicleDefs.ACCIDENT_SLIP_GAIN * slip
+	p *= lerpf(VehicleDefs.ACCIDENT_SKILL_NOVICE, VehicleDefs.ACCIDENT_SKILL_EXPERT, clampf(skill, 0.0, 1.0))
+	p *= 1.0 + VehicleDefs.ACCIDENT_TIRE_GAIN * (1.0 - clampf(float(v.parts[&"tires"]) / VehicleDefs.PART_WORN_BELOW, 0.0, 1.0))
+	return clampf(p, 0.0, 1.0)
+
+
+## Crash: every part takes damage (deterministic rolls); an experienced driver softens it.
+func crash(v: Vehicle, skill: float = 0.0) -> void:
+	var relief := 1.0 - VehicleDefs.CRASH_DAMAGE_SKILL_RELIEF * clampf(skill, 0.0, 1.0)
+	var k := 0
+	for part in VehicleDefs.PARTS:
+		var r: Vector2 = VehicleDefs.CRASH_DAMAGE[part]
+		v.parts[part] = clampf(float(v.parts[part]) - lerpf(r.x, r.y, world.hash01(v.id, v.accident_rolls, 94 + k)) * relief, 0.0, 1.0)
+		k += 1
+	v.sync_condition()
+	v.moving = false
+	v.path.clear()
+	_check_broken(v)
+	_emit()
+
+
+func broken_text(v: Vehicle) -> String:
+	return "%s сломался" % VehicleDefs.MODEL_NAMES[v.type]
+
+
+func _check_broken(v: Vehicle) -> void:
+	if v.broken_notified or v.broken_parts().is_empty():
+		return
+	v.broken_notified = true
+	if _sim != null:
+		_sim.bus.emit(TOPIC_BROKEN, {"id": v.id, "text": broken_text(v), "part": v.broken_parts()[0]})
+	_emit()
+
+
+## UI: [{part, name, word, state}] — vague words, never numbers.
+func part_summary(v: Vehicle) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for part in VehicleDefs.PARTS:
+		var c := float(v.parts[part])
+		out.append({"part": part, "name": VehicleDefs.part_name(part), "word": VehicleDefs.part_word(c, part), "state": VehicleDefs.part_state(c)})
+	return out
+
+
+# ---------- field repair (mechanic on site with spare parts) ----------
+
+## A vehicle that broke down in service (not an untouched wreck) with a part below the field cap.
+func field_part(v: Vehicle) -> StringName:
+	if not v.serviceable or v.driver_id != 0 or v.moving:
+		return &""
+	var cur: StringName = _field_target.get(v.id, &"")
+	if cur != &"" and float(v.parts[cur]) < VehicleDefs.FIELD_REPAIR_CAP:
+		return cur  # keep patching the same part up to the cap
+	_field_target.erase(v.id)
+	var broken := v.broken_parts()
+	if broken.is_empty():
+		return &""
+	var w := broken[0]
+	for part in broken:
+		if float(v.parts[part]) < float(v.parts[w]):
+			w = part
+	if float(v.parts[w]) >= VehicleDefs.FIELD_REPAIR_CAP:
+		return &""
+	_field_target[v.id] = w
+	return w
+
+
+## Field-repair jobs for mechanics (category Repair); only if the step's parts are in stock.
+func field_repair_jobs() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for id in vehicles:
+		var v: Vehicle = vehicles[id]
+		var part := field_part(v)
+		if part == &"":
+			continue
+		if not v.field_paid and not economy.can_afford(VehicleDefs.PART_REPAIR_COST[part]):
+			continue
+		out.append({"key": "fx:%d" % id, "cat": TaskDefs.REPAIR, "kind": &"fieldfix", "target": id, "pos": v.pos})
+	return out
+
+
+func can_field_repair(vil: Villager) -> bool:
+	return vil != null and vil.profession == &"mechanic"
+
+
+## Mechanic works on site. The step's parts are taken from storage when it starts.
+## Returns false when there is nothing (more) to do or no parts.
+func field_repair_work(vil: Villager, vehicle_id: int, work: float) -> bool:
+	var v := get_vehicle(vehicle_id)
+	if v == null or not can_field_repair(vil):
+		return false
+	var part := field_part(v)
+	if part == &"":
+		v.field_paid = false
+		v.field_work = 0.0
+		_field_target.erase(v.id)
+		return false
+	if not v.field_paid:
+		if not economy.consume(VehicleDefs.PART_REPAIR_COST[part]):
+			return false
+		v.field_paid = true
+	v.field_work += work
+	if v.field_work >= VehicleDefs.FIELD_REPAIR_STEP_WORK:
+		v.field_work = 0.0
+		v.field_paid = false
+		var gain := VehicleDefs.FIELD_REPAIR_GAIN * (1.0 + VehicleDefs.FIELD_REPAIR_SKILL_BONUS * clampf(vil.skill(TaskDefs.REPAIR), 0.0, 1.0))
+		v.set_part(part, minf(float(v.parts[part]) + gain, maxf(VehicleDefs.FIELD_REPAIR_CAP, float(v.parts[part]))))
+		_emit()
+	return field_part(v) != &""
 
 
 # ---------- roads ----------
@@ -695,6 +895,9 @@ func tick(sim: Simulation, dt: float) -> void:
 		if v.driver_id == 0:
 			v.warm = maxf(0.0, v.warm - dt / VehicleDefs.COOL_TIME)
 			v.moving = false
+			var cold := VehicleDefs.FROST_DRAIN_BELOW - temperature()
+			if cold > 0.0:
+				wear_part(v, &"battery", cold * VehicleDefs.BATTERY_DRAIN_PER_DEG_DAY * dt / day)
 
 
 # ---------- save ----------
@@ -729,20 +932,28 @@ static func _mission_in(d: Dictionary) -> Dictionary:
 	return m
 
 
+static func _parts_out(v: Vehicle) -> Dictionary:
+	var o := {}
+	for part in VehicleDefs.PARTS:
+		o[String(part)] = v.parts[part]
+	return o
+
+
 func save_state() -> Dictionary:
 	var list := []
 	for id in vehicles:
 		var v: Vehicle = vehicles[id]
 		list.append({"id": v.id, "type": String(v.type), "origin": String(v.origin), "cond": v.condition, "pos": [v.pos.x, v.pos.y, v.pos.z],
 			"facing": v.facing, "fuel": v.fuel, "driver": v.driver_id, "assigned": v.assigned_driver, "cargo_res": String(v.cargo_res),
-			"cargo_n": v.cargo_n, "warm": v.warm, "stuck": v.stuck_left, "odo": v.odometer, "chain": v.chain, "mission": _mission_out(v.mission)})
+			"cargo_n": v.cargo_n, "warm": v.warm, "stuck": v.stuck_left, "odo": v.odometer, "chain": v.chain, "mission": _mission_out(v.mission),
+			"parts": _parts_out(v), "serviceable": v.serviceable, "rolls": v.accident_rolls, "starts": v.start_count,
+			"notified": v.broken_notified, "fpaid": v.field_paid, "fwork": v.field_work})
 	return {"next_id": _next_id, "vehicles": list, "trails": trails.save_state()}
 
 
 func load_state(d: Dictionary) -> void:
 	for id in vehicles.keys():
-		if production != null:
-			production.unregister_repairable(vehicles[id].repair_id)
+		_unregister(vehicles[id])
 	vehicles.clear()
 	_next_id = SaveManager.to_int(d.get("next_id"), 1)
 	if d.get("trails") is Dictionary:
@@ -769,8 +980,17 @@ func load_state(d: Dictionary) -> void:
 		v.chain = SaveManager.to_int(e.get("chain"), 0)
 		if e.get("mission") is Dictionary:
 			v.mission = _mission_in(e["mission"])
+		var sp = e.get("parts")
+		if sp is Dictionary:
+			for part in VehicleDefs.PARTS:
+				v.parts[part] = clampf(float(sp.get(String(part), v.parts[part])), 0.0, 1.0)
+		v.serviceable = bool(e.get("serviceable", v.serviceable))
+		v.accident_rolls = SaveManager.to_int(e.get("rolls"), 0)
+		v.start_count = SaveManager.to_int(e.get("starts"), 0)
+		v.broken_notified = bool(e.get("notified", false))
+		v.field_paid = bool(e.get("fpaid", false))
+		v.field_work = float(e.get("fwork", 0.0))
 		vehicles[v.id] = v
 		_next_id = maxi(_next_id, v.id + 1)
-		if production != null:
-			production.register_repairable(v)
+		_register(v)
 	_emit()

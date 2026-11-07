@@ -138,3 +138,74 @@ static func unit_kg(res: StringName) -> float:
 static func capacity_units(type: StringName, res: StringName) -> int:
 	var d := def(type)
 	return mini(int(d["units"]), int(floor(float(d["max_kg"]) / unit_kg(res))))
+
+## --- Step 19: wear and breakdowns (design/gdd/vehicles.md «Износ и поломки») ---
+const PARTS: Array[StringName] = [&"engine", &"tires", &"battery"]
+const PART_NAMES := {&"engine": "мотор", &"tires": "шины", &"battery": "аккумулятор"}
+const PART_BROKEN_BELOW := 0.15      # part condition below this = «сломан»: the vehicle stops
+const PART_WORN_BELOW := 0.5         # below this = «изношен»: limping
+## Workshop/field repair step per part (existing resources only).
+const PART_REPAIR_COST := {&"engine": {&"spare_parts": 2}, &"tires": {&"scrap_metal": 2}, &"battery": {&"spare_parts": 1, &"scrap_metal": 1}}
+const PART_COLORS := {&"ok": Color(0.45, 0.8, 0.4), &"worn": Color(0.95, 0.75, 0.25), &"broken": Color(0.9, 0.3, 0.25)}
+## Wear per km (part condition lost).
+const ENGINE_WEAR_PER_KM := 0.02
+const ENGINE_OVERLOAD_FROM := 0.8    # load fraction from which the engine is overloaded
+const ENGINE_OVERLOAD_MULT := 1.5    # extra wear multiplier when overloaded (x load excess)
+const ENGINE_WORK_WEAR_PER_S := 0.00004   # working machines (plow/dig) wear the engine
+const TIRE_WEAR_PER_KM := 0.03
+const TIRE_SLIP_MULT := 2.0          # x slip (mud/snow)
+const TIRE_OFFROAD_MULT := 0.5       # no road and no ruts
+const TIRE_ROAD_MULT := 0.7          # road spares the tyres
+const BATTERY_WEAR_PER_KM := 0.002
+const BATTERY_START_WEAR := 0.004    # per start attempt
+const BATTERY_FROST_START_MULT := 0.05    # extra start wear per degree of frost
+const FROST_DRAIN_BELOW := -5.0      # parked vehicle drains the battery below this temperature
+const BATTERY_DRAIN_PER_DEG_DAY := 0.004
+## Winter starts: failure chance = cold x per-deg x (1 + weak battery) + worn engine; retries cost time.
+const START_FAIL_PER_DEG := 0.012
+const START_FAIL_BATTERY := 3.0
+const START_FAIL_ENGINE := 0.25
+const START_FAIL_SKILL_RELIEF := 0.4
+const START_FAIL_MAX := 0.9
+const START_MAX_TRIES := 5
+const START_RETRY_DELAY := 8.0       # s per failed attempt
+## Limp: worn engine slows, worn tyres slip more (continuous below PART_WORN_BELOW).
+const LIMP_SPEED := 0.6
+const LIMP_SLIP := 0.5
+## Accidents (chance per km): base x slope x load x slip x driver skill x worn tyres.
+const ACCIDENT_BASE_PER_KM := 0.12
+const ACCIDENT_SLOPE_GAIN := 2.0     # at slope = MAX_SLOPE
+const ACCIDENT_OVERLOAD_GAIN := 1.5  # x load (grows with slope)
+const ACCIDENT_SLIP_GAIN := 1.5
+const ACCIDENT_SKILL_NOVICE := 1.6   # skill 0 multiplier
+const ACCIDENT_SKILL_EXPERT := 0.4   # skill 1 multiplier
+const ACCIDENT_TIRE_GAIN := 1.0      # worn tyres
+## Crash damage per part (min..max, scaled by a deterministic roll).
+const CRASH_DAMAGE := {&"engine": Vector2(0.25, 0.6), &"tires": Vector2(0.3, 0.7), &"battery": Vector2(0.1, 0.4)}
+const CRASH_DAMAGE_SKILL_RELIEF := 0.3
+## Field repair (mechanic on site): slower than the workshop, patches up only to FIELD_REPAIR_CAP.
+const FIELD_REPAIR_STEP_WORK := 14.0
+const FIELD_REPAIR_CAP := 0.6
+const FIELD_REPAIR_GAIN := 0.2       # per step (x (1 + 0.5 x mechanic skill))
+const FIELD_REPAIR_SKILL_BONUS := 0.5
+
+
+static func part_name(part: StringName) -> String:
+	return PART_NAMES.get(part, String(part))
+
+
+## Vague state word and colour class for UI: ok | worn | broken.
+static func part_state(cond: float) -> StringName:
+	if cond < PART_BROKEN_BELOW:
+		return &"broken"
+	return &"worn" if cond < PART_WORN_BELOW else &"ok"
+
+
+static func part_word(cond: float, part: StringName = &"") -> String:
+	var plural := part == &"tires"
+	match part_state(cond):
+		&"broken":
+			return "сломаны" if plural else "сломан"
+		&"worn":
+			return "изношены" if plural else "изношен"
+	return "исправны" if plural else "исправен"
