@@ -223,3 +223,15 @@ func test_save_load_mid_repair_and_wear() -> void:
 	r2.vh.field_repair_work(m2, v2.id, 100.0)
 	assert_eq(r2.e.storage.amount(&"spare_parts"), spare, "a step already paid before saving is not paid twice")
 	assert_true(_p(v2, &"engine") > 0.0)
+
+
+func test_panel_shows_words_not_numbers() -> void:
+	var r := VehEnv.new()
+	var v := r.spawn(&"truck")
+	v.set_part(&"engine", 0.05)
+	v.set_part(&"battery", 0.3)
+	var panel := VehiclePanel.new()
+	panel.setup(r.vh, r.e.sim)
+	assert_eq(panel.line_text(v), "Бурун-5 — мотор: сломан · шины: исправны · аккумулятор: изношен")
+	assert_eq(panel.rows.size(), 1)
+	panel.free()

@@ -231,6 +231,12 @@ func bind_weather(sim_in: Simulation) -> void:
 		villagers_ui.show_toast(WeatherDefs.toast_text(p.get("id", &""))))
 
 
+## Notification «Бурун-5 сломался» (step 19).
+func bind_vehicles(sim_in: Simulation) -> void:
+	sim_in.bus.subscribe(VehicleSystem.TOPIC_BROKEN, func(p: Dictionary) -> void:
+		villagers_ui.show_toast(String(p.get("text", ""))))
+
+
 func bind_villagers(system: VillagerSystem) -> void:
 	villagers_ui.bind(system, sim)
 
