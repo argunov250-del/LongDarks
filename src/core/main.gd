@@ -21,6 +21,7 @@ var economy: EconomySystem
 var construction: ConstructionSystem
 var production: ProductionSystem
 var villagers: VillagerSystem
+var social: SocialSystem
 var villagers_view: VillagersView
 var buildings_view: BuildingsView
 var build_controller: BuildController
@@ -72,6 +73,10 @@ func _ready() -> void:
 	vehicles.attach(SimRunner.sim)
 	vehicles.bind(world_map, economy, construction, production, villagers, food, seasons, weather)
 	vehicles.populate_start()
+	social = SocialSystem.new(villagers)  # step 22: mental needs, friendship, holidays (design/gdd/mental-needs.md)
+	SimRunner.sim.register_system(social)
+	social.attach(SimRunner.sim)
+	social.bind(seasons)
 	world_view = WorldView.new()
 	world_view.name = "World"
 	add_child(world_view)
@@ -124,6 +129,7 @@ func _ready() -> void:
 	build_controller.setup(construction, $CameraRig/Camera3D, $UI/HUD, world_view, SimRunner.sim)
 	build_controller.production = production
 	build_controller.villagers = villagers
+	build_controller.social = social
 	build_controller.villagers_view = villagers_view
 	build_controller.food = food
 	build_controller.restoration = restoration

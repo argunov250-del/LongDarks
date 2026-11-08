@@ -31,7 +31,7 @@ func day_seconds() -> float:
 
 
 static func is_need_kind(kind: StringName) -> bool:
-	return KINDS.has(kind)
+	return KINDS.has(kind) or SocialSystem.is_social_kind(kind)  # шаг 22: общение, клуб, баня, праздник, уход
 
 
 # ---------- жильё ----------
@@ -234,7 +234,10 @@ func _tick_one(v: Villager, dt: float, days: float, staff: Dictionary) -> void:
 		v.bad_water_days = maxf(0.0, v.bad_water_days - dt / day_seconds())
 		if v.sick_acc >= NeedsDefs.SICK_ROLL_INTERVAL:
 			v.sick_acc -= NeedsDefs.SICK_ROLL_INTERVAL
-			var p := 1.0 - exp(-NeedsDefs.sick_rate_per_day(v.needs, v.bad_water_days > 0.0) * NeedsDefs.SICK_ROLL_INTERVAL / day_seconds())
+			var rate := NeedsDefs.sick_rate_per_day(v.needs, v.bad_water_days > 0.0)
+			if vs.social != null:
+				rate += vs.social.sick_bonus(v)  # шаг 22: подавленные болеют чаще
+			var p := 1.0 - exp(-rate * NeedsDefs.SICK_ROLL_INTERVAL / day_seconds())
 			if vs._rng().randf() < p:
 				fall_sick(v)
 
@@ -281,6 +284,8 @@ func _job(kind: StringName, target: int, dest: StringName) -> Dictionary:
 func job_for(v: Villager) -> Dictionary:
 	var cur: StringName = v.task.get("kind", &"")
 	var hs := vs.household
+	if vs.social != null and vs.social.is_leaving(v.id):
+		return vs.social.job_for(v, cur)  # решил уйти: ничто не держит
 	if v.need(NeedsDefs.WATER) < NeedsDefs.DRINK_BELOW or (cur == &"drink" and v.need(NeedsDefs.WATER) < NeedsDefs.MEAL_FULL):
 		var h := hs.home(v.home_id) if v.home_id > 0 else null
 		if h != null and h.water > 0:
@@ -313,6 +318,8 @@ func job_for(v: Villager) -> Dictionary:
 	if v.home_id > 0 and (v.need(NeedsDefs.WARMTH) < NeedsDefs.WARM_BELOW or (cur == &"warm" and v.need(NeedsDefs.WARMTH) < NeedsDefs.WARM_DONE)):
 		if hs.house_warmth(v.home_id) > v.need(NeedsDefs.WARMTH) + 0.1:
 			return _job(&"warm", v.home_id, &"home")
+	if vs.social != null:
+		return vs.social.job_for(v, cur)  # шаг 22: праздник, клуб, баня, разговор
 	return {}
 
 

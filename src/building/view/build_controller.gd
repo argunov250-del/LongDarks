@@ -28,6 +28,7 @@ const REASON_TEXT := {
 var con: ConstructionSystem
 var production: ProductionSystem  # опционально (main выставляет после setup)
 var villagers: VillagerSystem     # опционально: тап по жителю открывает карточку
+var social: SocialSystem          # шаг 22: психика (карточка жителя, праздник из клуба)
 var villagers_view: VillagersView # опционально: подсветка выбранного
 var camera: Camera3D
 var hud: Hud

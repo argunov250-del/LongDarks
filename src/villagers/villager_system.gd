@@ -38,6 +38,7 @@ var household: HouseholdSystem          # запасы домов и столо�
 var food: FoodSystem                    # поля, теплицы, охота, рыбалка, грибы (шаг 16), null — нет
 var vehicles: VehicleSystem               # step 18: vehicles, roads, footpaths; null — none
 var needs: NeedsSystem                  # потребности, расселение, болезни (шаг 11)
+var social: SocialSystem                # психика, дружба, праздники (шаг 22, design/gdd/mental-needs.md); null — нет
 ## Потребности и ночной сон включены (тесты старых шагов отключают).
 var needs_enabled: bool = true:
 	set(value):
@@ -378,7 +379,12 @@ func work_rate(v: Villager, cat: StringName, building_type: StringName = &"") ->
 
 ## Множитель скорости работы от нужд (еда, вода, тепло, отдых, здоровье); 1.0 — всё в порядке.
 func needs_multiplier(v: Villager) -> float:
-	return NeedsDefs.rate_multiplier(v.needs) if needs_enabled else 1.0
+	if not needs_enabled:
+		return 1.0
+	var m := NeedsDefs.rate_multiplier(v.needs)
+	if social != null:
+		m *= social.work_multiplier(v)  # шаг 22: плохое настроение замедляет работу
+	return m
 
 
 # ---------- список задач ----------
@@ -694,6 +700,16 @@ func _task_pos(v: Villager, t: Dictionary) -> Variant:
 		&"heal", &"treat":
 			var hosp := construction.get_building(t["target"])
 			return hosp.position if hosp != null else null
+		&"talk":
+			var tp := get_villager(t["target"])
+			return tp.pos if tp != null else null
+		&"club", &"bath":
+			var sb := construction.get_building(t["target"])
+			return sb.position if sb != null else null
+		&"party":
+			return social.party_point(v) if social != null else null
+		&"leave":
+			return social.leave_point(v.id) if social != null else null
 	return null
 
 
@@ -722,6 +738,15 @@ func _task_radius(t: Dictionary) -> float:
 		&"heal", &"treat":
 			var hb := construction.get_building(t["target"])
 			return _building_radius(hb) if hb != null else 1.0
+		&"talk":
+			return SocialDefs.TALK_RADIUS * 0.8
+		&"club", &"bath":
+			var sb := construction.get_building(t["target"])
+			return _building_radius(sb) if sb != null else 1.0
+		&"party":
+			return 1.2
+		&"leave":
+			return SocialDefs.LEAVE_REACH
 	return 1.0
 
 
@@ -852,6 +877,12 @@ func _alive(t: Dictionary) -> bool:
 		return vehicles != null and vehicles.is_drivable(vehicles.get_vehicle(t["target"]))
 	if t["kind"] == &"arrive":
 		return true
+	if t["kind"] == &"talk":
+		return villagers.has(t["target"])
+	if t["kind"] == &"party" or t["kind"] == &"leave":
+		return social != null
+	if (t["kind"] == &"club" or t["kind"] == &"bath") and social != null:
+		return construction.get_building(t["target"]) != null
 	if t["kind"] == &"extinguish":
 		return weather != null and weather.fire.is_burning(t["dest"], t["target"])
 	if NeedsSystem.is_need_kind(t["kind"]) and t["kind"] != &"treat":
@@ -915,6 +946,9 @@ func _tick_villager(v: Villager, dt: float) -> void:
 	var res := _go_to(v, goal, _task_radius(t), VillagerDefs.WALK_SPEED * walk_speed_multiplier * fm, dt)
 	if vehicles != null and v.moving:
 		vehicles.note_walk(v.id, v.pos)
+	if res == Go.BLOCKED and t["kind"] == &"leave" and social != null:
+		social.finish_leave(v)  # не пройти к краю — просто исчезает
+		return
 	if res == Go.BLOCKED:
 		v.banned[t["key"]] = _time + TaskDefs.BAN_TIME
 		_abandon(v)
@@ -1034,6 +1068,16 @@ func _work(v: Villager, t: Dictionary, dt: float) -> void:
 			_work_meal(v, t, dt)
 		&"sleep", &"warm", &"heal", &"treat", &"shelter":
 			pass  # восстановление и лечение — в NeedsSystem.tick, пока житель на месте
+		&"talk", &"club", &"party":
+			pass  # эффекты психики — в SocialSystem.tick, пока житель на месте
+		&"bath":
+			t["work"] += dt
+			if t["work"] >= SocialDefs.BATH_TIME and social != null:
+				social.finish_bath(v)
+				_end_task(v)
+		&"leave":
+			if social != null:
+				social.finish_leave(v)
 		&"field", &"hunt", &"fish", &"forage", &"gpick", &"plant", &"heal_land":
 			_work_food(v, t, dt)
 		&"chop", &"carry", &"water", &"food", &"garden", &"stoke", &"extinguish":
@@ -1345,6 +1389,17 @@ func task_text(v: Villager) -> String:
 			txt = "Лечится в больнице"
 		&"treat":
 			txt = "Лечит больных"
+		&"talk":
+			var tv2 := get_villager(t["target"])
+			txt = "Разговаривает с " + (tv2.display_name if tv2 != null else "?")
+		&"club":
+			txt = "Слушает музыку в клубе"
+		&"bath":
+			txt = "Моется в бане"
+		&"party":
+			txt = "Празднует" + (": " + String(social.holiday["name"]) if social != null and social.holiday_active() else "")
+		&"leave":
+			txt = "Уходит из посёлка"
 	if t["kind"] != &"arrive" and not v.at_site:
 		txt = "Идёт: " + txt
 	return txt

@@ -53,7 +53,7 @@ const FOOD_PER_UNIT := 0.3         # сытость от единицы еды (
 const WATER_PER_UNIT := 0.3
 ## Особая сытость отдельных продуктов (остальные — FOOD_PER_UNIT).
 const FOOD_VALUE := {&"meat": 0.5, &"fish": 0.45, &"eggs": 0.35, &"milk": 0.3, &"grain": 0.25, &"rapeseed": 0.2, &"mushrooms": 0.2}
-const HOOK_SHARED_MEAL := false    # ХУК (психика): общая трапеза в столовой даст бонус настроения
+const HOOK_SHARED_MEAL := true     # шаг 22: общая трапеза в столовой даёт общение, дружбу и бодрость (SocialSystem)
 
 # ---------- тепло ----------
 const DEFAULT_OUTDOOR_COLD := 0.35 # 0 — тепло, 1 — лютый мороз; без календаря (SeasonSystem выставляет сам)
