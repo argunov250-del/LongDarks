@@ -518,6 +518,8 @@ func villager_card_text(v: Villager) -> String:
 	t += "\nСейчас: " + villagers.task_text(v)
 	var warn := NeedsDefs.warning_text(v.needs, v.sick)
 	t += "\nПотребности:" + (" " + warn if warn != "" else "") + "\n" + NeedsDefs.card_lines(v.needs)
+	if social != null:
+		t += "\n" + social.card_text(v)
 	t += "\nЖильё: " + _home_name(v)
 	t += "\nНавыки:\n" + SkillDefs.card_lines(v.skills)
 	t += "\n" + v.backstory
@@ -557,6 +559,8 @@ func _show_info() -> void:
 			acts.append([&"pause", "Продолжить" if production.is_paused(b.id) else "Пауза", true])
 			if production.available_recipes(b.id).size() > 1:
 				acts.append([&"recipe", "Рецепт", true])
+		if social != null and b.is_done() and b.type == &"club":
+			acts.append([&"holiday", "Устроить праздник", social.can_call_holiday() == &"ok"])
 		if villagers != null and (not b.is_done() or production != null and production.is_producing_building(b.id) or BuildingDefs.is_housing(b.type) or BuildingDefs.is_canteen(b.type)):
 			acts.append([&"bprio", _priority_label(b.id), true])
 		if villagers != null and b.is_done() and BuildingDefs.is_housing(b.type):
@@ -774,6 +778,10 @@ func on_action(id: StringName) -> void:
 			if villagers != null:
 				var p := villagers.building_priority(selected_building) + 1  # авто -> 0 -> 1 -> 2 -> 3 -> авто
 				villagers.set_building_priority(selected_building, -1 if p > TaskDefs.PRIORITY_MAX else p)
+			_show_info()
+		&"holiday":
+			if social != null:
+				social.call_holiday()
 			_show_info()
 		&"upgrade":
 			con.upgrade(selected_building)

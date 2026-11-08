@@ -93,6 +93,7 @@ func _ready() -> void:
 	villagers_view.setup(villagers)
 	$UI/HUD.bind_villagers(villagers)
 	$UI/HUD.bind_seasons(seasons)
+	$UI/HUD.bind_social(social)
 	$UI/HUD.bind_weather(SimRunner.sim)
 	$UI/HUD.bind_vehicles(SimRunner.sim)
 	season_visuals = SeasonVisuals.new()

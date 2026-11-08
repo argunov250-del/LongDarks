@@ -345,6 +345,11 @@ func bind_villagers(system: VillagerSystem) -> void:
 	villagers_ui.bind(system, sim)
 
 
+## Шаг 22: настроение в списке жителей и уведомления психики.
+func bind_social(system: SocialSystem) -> void:
+	villagers_ui.bind_social(system, sim)
+
+
 func show_villagers_panel(panel_mode: StringName) -> void:
 	_menu_popup.visible = false
 	_sheet.visible = false

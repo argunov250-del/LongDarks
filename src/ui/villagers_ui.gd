@@ -15,6 +15,7 @@ const GOOD_COLOR := "#6fcf6f"
 const BAD_COLOR := "#ef6f6f"
 
 var vs: VillagerSystem
+var social: SocialSystem
 var mode: StringName = MODE_NONE
 var toast_panel: PanelContainer
 var toast_label: Label
@@ -76,6 +77,15 @@ func bind(system: VillagerSystem, sim: Simulation) -> void:
 		sim.bus.subscribe(VillagerSystem.TOPIC_SICK, _on_sick)
 		sim.bus.subscribe(VillagerSystem.TOPIC_RECOVERED, _on_recovered)
 		sim.bus.subscribe(VillagerSystem.TOPIC_DIED, _on_died)
+
+
+## Шаг 22: настроение жителей в списке, уведомления о ссорах, уходе и праздниках.
+func bind_social(system: SocialSystem, sim: Simulation) -> void:
+	social = system
+	if sim != null:
+		sim.bus.subscribe(SocialSystem.TOPIC_QUARREL, func(p: Dictionary) -> void: show_toast("Ссора: %s и %s" % [p.get("a_name", "?"), p.get("b_name", "?")]))
+		sim.bus.subscribe(SocialSystem.TOPIC_LEFT, func(p: Dictionary) -> void: show_toast("Ушёл из посёлка: %s, %s" % [p.get("name", "?"), VillagerDefs.profession_name(p.get("profession", &""))]))
+		sim.bus.subscribe(SocialSystem.TOPIC_HOLIDAY_STARTED, func(p: Dictionary) -> void: show_toast("Начался праздник: %s" % p.get("name", "?")))
 
 
 func _on_arrived(p: Dictionary) -> void:
@@ -181,11 +191,15 @@ func _refresh_villagers() -> void:
 		for id in ids:
 			_add_villager_row(vs.villagers[id])
 	_count_label.text = "Жителей: %d из %d" % [vs.population(), vs.max_population]
+	if social != null:
+		_count_label.text += "\n" + social.summary_text()
 	_sort_button.text = "Сортировка: " + ("порядок прибытия" if sort_cat == &"" else "навык «%s»" % TaskDefs.NAMES[sort_cat])
 	for id in _rows:
 		var v: Villager = vs.villagers[id]
 		var info: RichTextLabel = _rows[id]["info"]
 		var txt := "[b]%s[/b]%s — %s\n%s\n%s" % [v.display_name, " (герой)" if v.is_hero else "", v.profession_name(), traits_bbcode(v), vs.task_text(v)]
+		if social != null:
+			txt += "\nНастроение: " + social.mood_word(v)
 		var warn := NeedsDefs.warning_text(v.needs, v.sick)
 		if warn != "":
 			txt += "\n[color=%s]%s[/color]" % [BAD_COLOR, warn]
