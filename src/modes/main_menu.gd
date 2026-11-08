@@ -143,6 +143,7 @@ func _build_difficulty(parent: Control) -> void:
 		var b := _btn(String(ModeDefs.NEIGHBOUR_MODES[id]["name"]), nflow, _on_neighbours.bind(id))
 		b.toggle_mode = true
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.add_theme_font_size_override("font_size", 22)
 		neighbour_buttons[id] = b
 	_weather_label = _lbl("", p, 26)
 	weather_slider = _slider(p, ModeDefs.WEATHER_MULT_RANGE, _on_weather)
