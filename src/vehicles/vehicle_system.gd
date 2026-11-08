@@ -175,6 +175,8 @@ func is_drivable(v: Vehicle) -> bool:
 
 
 func status_text(v: Vehicle) -> String:
+	if v.player_driving:
+		return "Вы за рулём"
 	if not v.is_repaired():
 		if v.serviceable:
 			return "Сломана: " + ", ".join(v.broken_parts().map(func(p: StringName) -> String: return VehicleDefs.part_name(p)))
@@ -465,7 +467,7 @@ func jobs() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	for id in vehicles:
 		var v: Vehicle = vehicles[id]
-		if not is_drivable(v) and not fuelx.can_roll_to_depot(v):
+		if v.player_driving or (not is_drivable(v) and not fuelx.can_roll_to_depot(v)):
 			continue
 		if v.driver_id == 0 and not has_demand(v):
 			continue
@@ -486,6 +488,8 @@ func vehicle_near(p: Vector3, radius: float) -> Vehicle:
 
 
 func board(vil: Villager, v: Vehicle) -> bool:
+	if v.player_driving:
+		return false
 	if v.driver_id != 0 and v.driver_id != vil.id:
 		return false
 	if v.driver_id == vil.id and not v.mission.is_empty():
@@ -699,6 +703,11 @@ func _drive_to(v: Vehicle, vil: Villager, goal: Vector3, radius: float, dt: floa
 	return Go.MOVING
 
 
+## Public hook for manual driving: fuel, ruts, stuck, wear and accident rolls for `dist` metres driven.
+func note_moved(v: Vehicle, from_idx: int, dist: float, vil: Villager = null, grade: float = 0.0) -> void:
+	_after_move(v, from_idx, dist, vil, grade)
+
+
 func _after_move(v: Vehicle, from_idx: int, dist: float, vil: Villager = null, grade: float = 0.0) -> void:
 	if dist <= 0.0:
 		return
@@ -798,7 +807,7 @@ func part_summary(v: Vehicle) -> Array[Dictionary]:
 
 ## A vehicle that broke down in service (not an untouched wreck) with a part below the field cap.
 func field_part(v: Vehicle) -> StringName:
-	if not v.serviceable or v.driver_id != 0 or v.moving:
+	if not v.serviceable or v.driver_id != 0 or v.moving or v.player_driving:
 		return &""
 	var cur: StringName = _field_target.get(v.id, &"")
 	if cur != &"" and float(v.parts[cur]) < VehicleDefs.FIELD_REPAIR_CAP:
@@ -928,6 +937,8 @@ func tick(sim: Simulation, dt: float) -> void:
 	for id in vehicles:
 		var v: Vehicle = vehicles[id]
 		fuelx.cleanup(v)
+		if v.player_driving:
+			continue  # manual driving (ManualDrive) owns warm-up, motion and wear
 		if v.driver_id != 0 and villagers.get_villager(v.driver_id) == null:
 			release(v)  # driver gone
 		if v.driver_id == 0:

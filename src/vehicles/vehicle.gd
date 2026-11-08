@@ -36,6 +36,8 @@ var field_work := 0.0                   # progress of the current field-repair s
 var conversion: StringName = FuelDefs.NO_CONVERSION
 var upgrades: Array[StringName] = []
 var mod_job: VehicleModJob = null
+## Step 21 (design/gdd/manual-driving.md): the player is at the wheel (not saved; AI must leave the vehicle alone).
+var player_driving := false
 
 
 func _init(id_in: int = 0, type_in: StringName = &"truck", condition_in: float = 1.0) -> void:
