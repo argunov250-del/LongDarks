@@ -53,6 +53,7 @@ const _DEFS := {
 	&"barn": ["Сарай", Tab.ADDON, HouseholdDefs.BARN_SIZE, [{&"logs": 2}, {&"logs": 4, &"planks": 2}, {&"planks": 4}], [6.0, 10.0, 6.0], &"", 1.5, {"barn": true}],
 	# защита
 	&"fence": ["Забор", Tab.DEFENSE, Vector2(4, 0.6), [{&"logs": 1}, {&"planks": 2}, {}], [3.0, 5.0, 0.0], &"", 1.5, {}],
+	&"guard_post": ["Сторожка", Tab.DEFENSE, Vector2(3, 3), [{&"logs": 3}, {&"logs": 4, &"planks": 2}, {&"planks": 2}], [6.0, 10.0, 6.0], &"", 2.2, {}],
 	&"watchtower": ["Вышка", Tab.DEFENSE, Vector2(2.5, 2.5), [{&"stone": 3}, {&"logs": 6, &"planks": 2}, {&"planks": 3}], [8.0, 16.0, 8.0], &"", 6.0, {}],
 }
 

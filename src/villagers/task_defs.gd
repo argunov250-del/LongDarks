@@ -21,19 +21,21 @@ const PLANT := &"plant"
 const HEAL_LAND := &"heal_land"
 ## Step 18 (vehicles): driving (design/gdd/vehicles.md).
 const DRIVE := &"drive"
+## Step 24 (neighbours): guard duty (design/gdd/neighbours.md); abstract on-duty share, no walking.
+const GUARD := &"guard"
 
-const CATEGORIES: Array[StringName] = [BUILD, FELL, DISMANTLE, PRODUCTION, CHORES, FIELD, HUNT, FISH, FORAGE, GREENHOUSE, PLANT, HEAL_LAND, DRIVE]
+const CATEGORIES: Array[StringName] = [BUILD, FELL, DISMANTLE, PRODUCTION, CHORES, FIELD, HUNT, FISH, FORAGE, GREENHOUSE, PLANT, HEAL_LAND, DRIVE, GUARD]
 const WORK_CATEGORIES: Array[StringName] = [BUILD, FELL, DISMANTLE, PRODUCTION, REPAIR, CHORES, FIELD, HUNT, FISH, FORAGE, GREENHOUSE, PLANT, HEAL_LAND, DRIVE]
 const NAMES := {
 	BUILD: "Стройка", FELL: "Вырубка", DISMANTLE: "Разбор",
 	PRODUCTION: "Производство", CHORES: "Повседневные дела", REPAIR: "Ремонт",
-	FIELD: "Поле", HUNT: "Охота", FISH: "Рыбалка", FORAGE: "Сбор", GREENHOUSE: "Теплица", PLANT: "Посадка", HEAL_LAND: "Лечение земли", DRIVE: "Вождение",
+	FIELD: "Поле", HUNT: "Охота", FISH: "Рыбалка", FORAGE: "Сбор", GREENHOUSE: "Теплица", PLANT: "Посадка", HEAL_LAND: "Лечение земли", DRIVE: "Вождение", GUARD: "Охрана",
 }
 
 const PRIORITY_MIN := 0
 const PRIORITY_MAX := 3
 const DEFAULT_PRIORITY := {BUILD: 2, FELL: 2, DISMANTLE: 2, PRODUCTION: 2, CHORES: 1,
-	FIELD: 2, HUNT: 1, FISH: 1, FORAGE: 1, GREENHOUSE: 2, PLANT: 1, HEAL_LAND: 1, DRIVE: 2}
+	FIELD: 2, HUNT: 1, FISH: 1, FORAGE: 1, GREENHOUSE: 2, PLANT: 1, HEAL_LAND: 1, DRIVE: 2, GUARD: 1}
 const PRIORITY_NAMES: Array[String] = ["выкл", "низкий", "средний", "высокий"]
 
 ## --- Выбор задачи: score = приоритет*W + (множитель пригодности-1)*W - расстояние*W ---
