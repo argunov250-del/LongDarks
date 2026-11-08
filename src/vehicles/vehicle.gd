@@ -32,6 +32,10 @@ var broken_notified := false
 var part_repairs: Dictionary = {}       # part -> VehiclePartRepair
 var field_paid := false                 # the current field step has been paid for
 var field_work := 0.0                   # progress of the current field-repair step (saved)
+## Step 20 (design/gdd/fuel-and-upgrades.md): conversion (&"" | biofuel | gasgen), upgrades, pending workshop job.
+var conversion: StringName = FuelDefs.NO_CONVERSION
+var upgrades: Array[StringName] = []
+var mod_job: VehicleModJob = null
 
 
 func _init(id_in: int = 0, type_in: StringName = &"truck", condition_in: float = 1.0) -> void:
@@ -47,8 +51,35 @@ func _init(id_in: int = 0, type_in: StringName = &"truck", condition_in: float =
 	display_name = "%s «%s»" % [d["name"], VehicleDefs.MODEL_NAMES[type_in]]
 
 
+## Tank litres; a gas generator only has a small wood hopper.
 func tank() -> float:
-	return float(VehicleDefs.def(type)["tank"])
+	var t := float(VehicleDefs.def(type)["tank"])
+	return t * FuelDefs.GASGEN_HOPPER if conversion == FuelDefs.GASGEN else t
+
+
+func engine() -> StringName:
+	return FuelDefs.engine_of(type)
+
+
+func accepted_fuels() -> Array[StringName]:
+	return FuelDefs.accepted(engine(), conversion)
+
+
+func accepts_fuel(res: StringName) -> bool:
+	return FuelDefs.accepts(engine(), conversion, res)
+
+
+func has_upgrade(kind: StringName) -> bool:
+	return upgrades.has(kind)
+
+
+## Engine speed multiplier of the fuel system (gas generator is weaker).
+func engine_speed_mult() -> float:
+	return FuelDefs.GASGEN_SPEED if conversion == FuelDefs.GASGEN else 1.0
+
+
+func fuel_use_mult() -> float:
+	return FuelDefs.GASGEN_FUEL_MULT if conversion == FuelDefs.GASGEN else 1.0
 
 
 ## Wreck (never repaired): all parts >= DRIVABLE_CONDITION. In service: no part is broken.

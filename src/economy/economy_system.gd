@@ -98,10 +98,22 @@ func tick(sim: Simulation, dt: float) -> void:
 	var days := dt / sim.clock.day_seconds()
 	var any := false
 	for s in storages:
-		if not s.spoil(days).is_empty():
+		var lost := s.spoil(days)
+		if not lost.is_empty():
 			any = true
+			note_spoiled(lost)
 	if any:
 		_changed()
+
+
+## Spoiled food becomes waste (biogas input, step 20): best effort, only if a storage has room.
+func note_spoiled(lost: Dictionary) -> void:
+	var n := 0
+	for res in lost:
+		if ResourceDefs.category(res) == ResourceDefs.Category.FOOD:
+			n += int(lost[res]) * FuelDefs.WASTE_PER_SPOILED
+	if n > 0:
+		deposit(&"waste", n)
 
 
 func _changed() -> void:

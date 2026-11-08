@@ -18,6 +18,11 @@ const REPAIR_BUILDING := &"workshop"
 const _DEFS := {
 	&"sawmill_planks": [&"sawmill", "Доски из бревён", {&"logs": 2}, {&"planks": 3}, 20.0],
 	&"oil_press_oil": [&"oil_press", "Масло из рапса", {&"rapeseed": 3}, {&"oil": 1}, 30.0],
+	# шаг 20, цепочки топлива (design/gdd/fuel-and-upgrades.md): рапс -> масло -> биодизель; спирт; биогаз
+	&"biodiesel_plant_biodiesel": [&"biodiesel_plant", "Биодизель из масла", {&"oil": 1}, {&"biodiesel": 1}, 30.0],
+	&"distillery_grain": [&"distillery", "Спирт из зерна", {&"grain": 4}, {&"alcohol": 1}, 40.0],
+	&"distillery_potato": [&"distillery", "Спирт из картофеля", {&"potato": 5}, {&"alcohol": 1}, 40.0],
+	&"biogas_plant_biogas": [&"biogas_plant", "Биогаз из навоза и отходов", {&"manure": 3, &"waste": 2}, {&"biogas": 2}, 45.0],
 	&"workshop_parts": [&"workshop", "Запчасти из металлолома", {&"scrap_metal": 2}, {&"spare_parts": 1}, 40.0],
 }
 

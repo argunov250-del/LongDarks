@@ -62,7 +62,7 @@ const PROFESSION_BONUS := {
 	HUNT: {&"hunter": 1.5}, FISH: {&"fisher": 1.5}, DRIVE: {&"driver": 1.5},
 }
 ## Производство: профессия, подходящая зданию (множитель PRODUCTION_MATCH_BONUS).
-const PRODUCTION_PROFESSION := {&"sawmill": &"carpenter", &"oil_press": &"farmer", &"workshop": &"mechanic"}
+const PRODUCTION_PROFESSION := {&"sawmill": &"carpenter", &"oil_press": &"farmer", &"workshop": &"mechanic", &"biodiesel_plant": &"mechanic", &"distillery": &"farmer", &"biogas_plant": &"farmer"}
 const PRODUCTION_MATCH_BONUS := 1.5
 const MIN_RATE_MULT := 0.2         # пол суммарного множителя черт
 

@@ -383,13 +383,20 @@ func tick(sim: Simulation, dt: float) -> void:
 				h.egg_acc -= HouseholdDefs.EGG_PERIOD
 			if h.milk_acc >= HouseholdDefs.MILK_PERIOD and h.food.add(&"milk", 1) > 0:
 				h.milk_acc -= HouseholdDefs.MILK_PERIOD
+			h.manure_acc = minf(h.manure_acc + dt * HouseholdDefs.COWS, FuelDefs.MANURE_PERIOD)
+			if h.manure_acc >= FuelDefs.MANURE_PERIOD and economy != null and economy.deposit(&"manure", 1) > 0:
+				h.manure_acc -= FuelDefs.MANURE_PERIOD
 		if not cold_store:
-			h.food.spoil(days)
+			var lost := h.food.spoil(days)
+			if economy != null and not lost.is_empty():
+				economy.note_spoiled(lost)
 		if simulate_heat:
 			_tick_heat(id, h, days)
 	if not cold_store:
 		for id in canteens:
-			(canteens[id] as Household).food.spoil(days)
+			var clost := (canteens[id] as Household).food.spoil(days)
+			if economy != null and not clost.is_empty():
+				economy.note_spoiled(clost)
 
 
 ## Печь жжёт дрова из своего запаса, дом греется к цели или остывает.

@@ -25,6 +25,8 @@ var pf: VehiclePathfinder
 var mud_override := -1.0
 var snow_override := -1.0
 var temperature_override := NAN
+var night_override := -1               # -1 real clock (no seasons -> day), 0 day, 1 night
+var fuelx: VehicleFuel                 # step 20: fuel chains, conversions, upgrades, refuel trips
 var _next_id := 1
 var _sim: Simulation
 var _field_target: Dictionary = {}     # vehicle id -> part a mechanic is patching (not saved)
@@ -41,6 +43,7 @@ func bind(world_in: WorldMap, economy_in: EconomySystem, construction_in: Constr
 	seasons = seasons_in
 	weather = weather_in
 	pf = VehiclePathfinder.new(world, construction, villagers, trails)
+	fuelx = VehicleFuel.new(self)
 	pf.deposits = economy.deposits
 	if villagers != null:
 		villagers.vehicles = self
@@ -92,11 +95,15 @@ func _register(v: Vehicle) -> void:
 		production.register_repairable(v)
 		for part in VehicleDefs.PARTS:
 			production.register_repairable(v.part_repairs[part])
+		if v.mod_job != null:
+			production.register_repairable(v.mod_job)
 
 
 func _unregister(v: Vehicle) -> void:
 	if production != null:
 		production.unregister_repairable(v.repair_id)
+		if v.mod_job != null:
+			production.unregister_repairable(v.mod_job.repair_id)
 		for part in v.part_repairs:
 			production.unregister_repairable((v.part_repairs[part] as Repairable).repair_id)
 
@@ -218,7 +225,8 @@ func start_delay(v: Vehicle, vil: Villager = null) -> float:
 	var cold := maxf(0.0, -temperature())
 	var base := VehicleDefs.START_BASE + cold * VehicleDefs.START_PER_DEG * float(VehicleDefs.def(v.type)["cold"])
 	var skill := vil.skill(VehicleDefs.DRIVE) if vil != null else 0.0
-	return minf(base, VehicleDefs.START_MAX) * (1.0 - v.warm) * (1.0 - VehicleDefs.START_SKILL_RELIEF * skill)
+	var ins := FuelDefs.INSULATION_DELAY_MULT if v.has_upgrade(&"insulation") else 1.0
+	return minf(base, VehicleDefs.START_MAX) * (1.0 - v.warm) * (1.0 - VehicleDefs.START_SKILL_RELIEF * skill) * ins
 
 
 ## Chance that one start attempt fails: frost x (weak battery, worn engine), relieved by driver skill.
@@ -229,6 +237,8 @@ func start_fail_chance(v: Vehicle, vil: Villager = null) -> float:
 	var weak := VehicleDefs.START_FAIL_BATTERY * (1.0 - float(v.parts[&"battery"])) + VehicleDefs.START_FAIL_ENGINE * (1.0 - float(v.parts[&"engine"]))
 	var p := cold * VehicleDefs.START_FAIL_PER_DEG * float(VehicleDefs.def(v.type)["cold"]) * (1.0 + weak)
 	var skill := vil.skill(VehicleDefs.DRIVE) if vil != null else 0.0
+	if v.has_upgrade(&"insulation"):
+		p *= FuelDefs.INSULATION_FAIL_MULT
 	return clampf(p * (1.0 - VehicleDefs.START_FAIL_SKILL_RELIEF * skill), 0.0, VehicleDefs.START_FAIL_MAX)
 
 
@@ -248,8 +258,24 @@ func start_failures(v: Vehicle, vil: Villager = null) -> int:
 	return fails
 
 
+## Raw tank top-up (litre-equivalents, no fuel-type check). Fuel-type aware refuelling: fuelx.refuel_from().
 func refuel(v: Vehicle, litres: float) -> void:
-	v.fuel = clampf(v.fuel + litres, 0.0, v.tank())  # step 20 hook (fuel chains)
+	v.fuel = clampf(v.fuel + litres, 0.0, v.tank())
+
+
+func is_night() -> bool:
+	if night_override >= 0:
+		return night_override == 1
+	if seasons == null or _sim == null:
+		return false
+	return NeedsDefs.is_night(_sim.clock.get_hour())
+
+
+## Night slows driving; headlights mostly cancel it.
+func night_speed_mult(v: Vehicle) -> float:
+	if not is_night():
+		return 1.0
+	return FuelDefs.NIGHT_SPEED_LIGHTS if v.has_upgrade(&"headlights") else FuelDefs.NIGHT_SPEED
 
 
 # ---------- terrain / speed ----------
@@ -268,6 +294,8 @@ func slip_level(v: Vehicle, idx: int) -> float:
 		snow = seasons.snow_cover() if seasons != null else 0.0
 	var d := VehicleDefs.def(v.type)
 	var s := (mud * (1.0 - float(d["mud"])) + snow * (1.0 - float(d["snow"]))) * (1.0 + VehicleDefs.LOAD_SLIP * v.load_frac()) * v.tire_slip_mult()
+	if v.has_upgrade(&"chains"):
+		s *= FuelDefs.CHAINS_SLIP_MULT
 	if trails.is_road(idx):
 		s *= 1.0 - VehicleDefs.ROAD_SLIP_RELIEF
 	else:
@@ -277,7 +305,7 @@ func slip_level(v: Vehicle, idx: int) -> float:
 
 ## Speed (m/s) of a vehicle on a cell with a driver.
 func speed_at(v: Vehicle, idx: int, vil: Villager) -> float:
-	var base := float(VehicleDefs.def(v.type)["speed"]) * driver_speed_mult(vil) * v.limp_speed_mult()
+	var base := float(VehicleDefs.def(v.type)["speed"]) * driver_speed_mult(vil) * v.limp_speed_mult() * v.engine_speed_mult() * night_speed_mult(v)
 	var sp := base * (1.0 - VehicleDefs.LOAD_SPEED_LOSS * v.load_frac()) * trails.vehicle_mult(idx) * (1.0 - VehicleDefs.SLIP_SPEED_LOSS * slip_level(v, idx))
 	return maxf(sp, base * VehicleDefs.MIN_SPEED_FRAC)
 
@@ -313,6 +341,11 @@ func _field_claimed(idx: int) -> bool:
 
 
 func plan(v: Vehicle) -> Dictionary:
+	var rf := fuelx.plan_refuel(v)
+	if not rf.is_empty():
+		return rf
+	if v.fuel <= 0.0:
+		return {}
 	match VehicleDefs.role(v.type):
 		&"haul":
 			return _plan_haul(v)
@@ -432,7 +465,7 @@ func jobs() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	for id in vehicles:
 		var v: Vehicle = vehicles[id]
-		if not is_drivable(v):
+		if not is_drivable(v) and not fuelx.can_roll_to_depot(v):
 			continue
 		if v.driver_id == 0 and not has_demand(v):
 			continue
@@ -504,8 +537,8 @@ func drive_tick(vil: Villager, t: Dictionary, dt: float) -> int:
 
 
 func _mission_step(v: Vehicle, vil: Villager, dt: float) -> int:
-	if not is_drivable(v):
-		return Res.FAILED
+	if not is_drivable(v) and not (v.is_repaired() and v.mission.get("kind", &"") == &"refuel"):
+		return Res.FAILED  # (an empty vehicle is pushed to the depot: refuel missions only)
 	var m := v.mission
 	if m.is_empty():
 		return Res.DONE
@@ -549,6 +582,8 @@ func _mission_step(v: Vehicle, vil: Villager, dt: float) -> int:
 				v.cargo_n = 0
 				economy._changed()
 				return _next(v, vil)
+		&"to_depot", &"refuel":
+			return fuelx.step(v, vil, dt)
 		&"to_field":
 			var c := world.cell_center(int(m["idx"]) % world.size, int(m["idx"]) / world.size)
 			var g := _drive_to(v, vil, c, VehicleDefs.FIELD_RADIUS, dt)
@@ -616,7 +651,7 @@ func _next(v: Vehicle, _vil: Villager) -> int:
 
 
 func _burn_work(v: Vehicle, dt: float) -> void:
-	v.fuel = maxf(0.0, v.fuel - float(VehicleDefs.def(v.type)["work_fuel"]) * dt)
+	v.fuel = maxf(0.0, v.fuel - float(VehicleDefs.def(v.type)["work_fuel"]) * v.fuel_use_mult() * dt)
 	if float(VehicleDefs.def(v.type)["work_fuel"]) > 0.0:
 		wear_part(v, &"engine", VehicleDefs.ENGINE_WORK_WEAR_PER_S * dt)
 
@@ -668,7 +703,7 @@ func _after_move(v: Vehicle, from_idx: int, dist: float, vil: Villager = null, g
 	if dist <= 0.0:
 		return
 	v.odometer += dist
-	v.fuel = maxf(0.0, v.fuel - dist / 1000.0 * float(VehicleDefs.def(v.type)["fuel_km"]) * (1.0 + VehicleDefs.LOAD_FUEL * v.load_frac()))
+	v.fuel = maxf(0.0, v.fuel - dist / 1000.0 * float(VehicleDefs.def(v.type)["fuel_km"]) * v.fuel_use_mult() * (1.0 + VehicleDefs.LOAD_FUEL * v.load_frac()))
 	var i := cell_idx(v.pos)
 	if i != from_idx:
 		trails.add_rut(i)
@@ -717,6 +752,8 @@ func accident_chance(v: Vehicle, dist: float, grade: float, slip: float, skill: 
 	p *= 1.0 + VehicleDefs.ACCIDENT_SLIP_GAIN * slip
 	p *= lerpf(VehicleDefs.ACCIDENT_SKILL_NOVICE, VehicleDefs.ACCIDENT_SKILL_EXPERT, clampf(skill, 0.0, 1.0))
 	p *= 1.0 + VehicleDefs.ACCIDENT_TIRE_GAIN * (1.0 - clampf(float(v.parts[&"tires"]) / VehicleDefs.PART_WORN_BELOW, 0.0, 1.0))
+	if is_night():
+		p *= FuelDefs.NIGHT_ACCIDENT_LIGHTS if v.has_upgrade(&"headlights") else FuelDefs.NIGHT_ACCIDENT
 	return clampf(p, 0.0, 1.0)
 
 
@@ -890,14 +927,15 @@ func tick(sim: Simulation, dt: float) -> void:
 	trails.decay(dt / day)
 	for id in vehicles:
 		var v: Vehicle = vehicles[id]
+		fuelx.cleanup(v)
 		if v.driver_id != 0 and villagers.get_villager(v.driver_id) == null:
 			release(v)  # driver gone
 		if v.driver_id == 0:
-			v.warm = maxf(0.0, v.warm - dt / VehicleDefs.COOL_TIME)
+			v.warm = maxf(0.0, v.warm - dt / (VehicleDefs.COOL_TIME * (FuelDefs.INSULATION_COOL_MULT if v.has_upgrade(&"insulation") else 1.0)))
 			v.moving = false
 			var cold := VehicleDefs.FROST_DRAIN_BELOW - temperature()
 			if cold > 0.0:
-				wear_part(v, &"battery", cold * VehicleDefs.BATTERY_DRAIN_PER_DEG_DAY * dt / day)
+				wear_part(v, &"battery", cold * VehicleDefs.BATTERY_DRAIN_PER_DEG_DAY * (FuelDefs.INSULATION_DRAIN_MULT if v.has_upgrade(&"insulation") else 1.0) * dt / day)
 
 
 # ---------- save ----------
@@ -947,7 +985,7 @@ func save_state() -> Dictionary:
 			"facing": v.facing, "fuel": v.fuel, "driver": v.driver_id, "assigned": v.assigned_driver, "cargo_res": String(v.cargo_res),
 			"cargo_n": v.cargo_n, "warm": v.warm, "stuck": v.stuck_left, "odo": v.odometer, "chain": v.chain, "mission": _mission_out(v.mission),
 			"parts": _parts_out(v), "serviceable": v.serviceable, "rolls": v.accident_rolls, "starts": v.start_count,
-			"notified": v.broken_notified, "fpaid": v.field_paid, "fwork": v.field_work})
+			"notified": v.broken_notified, "fpaid": v.field_paid, "fwork": v.field_work, "fuelx": fuelx.save_vehicle(v)})
 	return {"next_id": _next_id, "vehicles": list, "trails": trails.save_state()}
 
 
@@ -990,6 +1028,7 @@ func load_state(d: Dictionary) -> void:
 		v.broken_notified = bool(e.get("notified", false))
 		v.field_paid = bool(e.get("fpaid", false))
 		v.field_work = float(e.get("fwork", 0.0))
+		fuelx.load_vehicle(v, e.get("fuelx"))
 		vehicles[v.id] = v
 		_next_id = maxi(_next_id, v.id + 1)
 		_register(v)

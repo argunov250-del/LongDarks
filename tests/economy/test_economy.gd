@@ -21,7 +21,7 @@ func test_add_remove_capacity() -> void:
 
 
 func test_catalog() -> void:
-	assert_eq(ResourceDefs.all_ids().size(), 26)
+	assert_eq(ResourceDefs.all_ids().size(), 28)
 	assert_true(ResourceDefs.is_perishable(&"milk"))
 	assert_false(ResourceDefs.is_perishable(&"logs"))
 	assert_eq(ResourceDefs.display_name(&"logs"), "бревно")

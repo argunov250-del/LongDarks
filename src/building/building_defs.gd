@@ -35,6 +35,9 @@ const _DEFS := {
 	# производство
 	&"sawmill": ["Пилорама", Tab.PRODUCTION, Vector2(6, 4), [{&"stone": 3, &"logs": 2}, {&"logs": 6, &"planks": 2}, {&"planks": 4, &"scrap_metal": 4}], [12.0, 18.0, 12.0], &"", 2.2, {}],
 	&"oil_press": ["Маслобойня", Tab.PRODUCTION, Vector2(4, 4), [{&"stone": 3}, {&"planks": 6, &"scrap_metal": 3}, {&"planks": 4}], [10.0, 16.0, 10.0], &"", 2.2, {}],
+	&"biodiesel_plant": ["Биодизельная установка", Tab.PRODUCTION, Vector2(4, 4), [{&"stone": 3}, {&"planks": 5, &"scrap_metal": 4}, {&"planks": 4, &"scrap_metal": 2}], [10.0, 16.0, 10.0], &"", 2.2, {}],
+	&"distillery": ["Винокурня", Tab.PRODUCTION, Vector2(4, 4), [{&"stone": 3}, {&"planks": 6, &"scrap_metal": 2}, {&"planks": 4}], [10.0, 16.0, 10.0], &"", 2.2, {}],
+	&"biogas_plant": ["Биогазовая установка", Tab.PRODUCTION, Vector2(5, 4), [{&"stone": 4}, {&"planks": 4, &"scrap_metal": 5}, {&"planks": 3, &"scrap_metal": 3}], [12.0, 18.0, 12.0], &"", 1.8, {}],
 	&"workshop": ["Мастерская", Tab.PRODUCTION, Vector2(5, 4), [{&"stone": 4}, {&"planks": 6, &"scrap_metal": 6}, {&"planks": 5, &"scrap_metal": 4}], [12.0, 20.0, 14.0], &"", 2.4, {}],
 	&"warehouse": ["Склад", Tab.PRODUCTION, Vector2(6, 5), [{&"logs": 3, &"stone": 2}, {&"planks": 8}, {&"planks": 6}], [10.0, 16.0, 10.0], &"", 2.2, {"storage": WAREHOUSE_CAPACITY}],
 	&"cellar": ["Погреб", Tab.PRODUCTION, Vector2(4, 3), [{&"stone": 6}, {&"stone": 6, &"logs": 2}, {&"logs": 3}], [10.0, 12.0, 6.0], &"", 1.0, {"storage": CELLAR_CAPACITY, "cellar": true}],

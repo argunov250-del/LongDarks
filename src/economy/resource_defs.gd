@@ -21,6 +21,8 @@ const _DEFS := {
 	&"sand": ["песок", Category.RAW, 0.0],
 	&"lime": ["известь", Category.RAW, 0.0],
 	&"cement": ["цемент", Category.RAW, 0.0],
+	&"manure": ["навоз", Category.RAW, 0.0],   # шаг 20: от коров в сараях, сырьё биогаза
+	&"waste": ["отходы", Category.RAW, 0.0],   # шаг 20: испорченная еда, сырьё биогаза
 	# еда
 	&"grain": ["зерно", Category.FOOD, SPOIL_PER_DAY_SLOW],
 	&"potato": ["картофель", Category.FOOD, SPOIL_PER_DAY_SLOW],
