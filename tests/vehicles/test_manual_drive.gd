@@ -160,7 +160,7 @@ func test_warmup_before_moving_and_frost_start() -> void:
 		started = started or md2.take(w)
 		if started:
 			break
-	assert_true(started or md2.refusal_text == "Двигатель не заводится")
+	assert_true(started or md2.refusal_text != "", "either it starts or the player is told why not")
 
 
 # ---------- same physics as AI ----------

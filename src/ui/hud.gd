@@ -55,6 +55,16 @@ var _tabs_row: HBoxContainer
 var _tab_panel: PanelContainer
 var _tab_title: Label
 var _tab_items: HFlowContainer
+var _tab_list: ScrollContainer     # список зданий вкладки: прокручивается, если не помещается
+var _list_avail_w := 400.0         # ширина под список (для расчёта переноса строк)
+var _list_max_h := 400.0           # высота под список (экран минус всё остальное)
+var drive_settings: DriveSettings  # настройки ручного вождения (общие с ManualDriveController)
+var _settings_panel: PanelContainer
+var _settings_title: Label
+var _scheme_buttons: Dictionary = {}
+var _calib_button: Button
+var _settings_close: Button
+var _driving := false
 var _bar: PanelContainer          # панель действий под верхней панелью
 var _bar_label: Label
 var _bar_row: HFlowContainer
@@ -152,12 +162,14 @@ func _fill_tab_items(tab: int) -> void:
 	if tab == TOOLS_TAB:
 		for tb in tool_buttons:
 			_tab_items.add_child(tb)
+		fit_tab_list()
 		return
 	for id in BuildingDefs.ids_in_tab(tab):
 		var b := _mk_button(BuildingDefs.display_name(id))
 		b.custom_minimum_size = Vector2(0.0, MIN_TOUCH_DP * _dp)
 		b.pressed.connect(_on_build_item.bind(id))
 		_tab_items.add_child(b)
+	fit_tab_list()
 
 
 ## A brush tool was chosen: collapse the «Земля» tab.
@@ -219,8 +231,95 @@ func do_load() -> void:
 	_refresh_clock(true)
 
 
+## Настройки: панель «Управление машиной» (Джойстик / Наклон / Кнопки), хранится в user://settings.cfg.
 func do_settings() -> void:
-	_set_status("Настройки: скоро")
+	_ensure_drive_settings()
+	_menu_popup.visible = false
+	_sheet.visible = false
+	_settings_panel.visible = not _settings_panel.visible
+	_refresh_settings()
+
+
+func _ensure_drive_settings() -> void:
+	if drive_settings == null:
+		drive_settings = DriveSettings.new()
+		drive_settings.load()
+
+
+func _on_scheme_pressed(scheme: StringName) -> void:
+	_ensure_drive_settings()
+	if drive_settings.set_scheme(scheme):
+		drive_settings.save()
+	_refresh_settings()
+
+
+func _on_calibrate_pressed() -> void:
+	_ensure_drive_settings()
+	drive_settings.tilt_neutral = Vector3.ZERO  # следующая посадка: текущая поза телефона станет нейтральной
+	drive_settings.save()
+	_set_status("Наклон: поза обнулится при посадке")
+
+
+func _refresh_settings() -> void:
+	_ensure_drive_settings()
+	for k in _scheme_buttons:
+		(_scheme_buttons[k] as Button).set_pressed_no_signal(k == drive_settings.scheme)
+
+
+## Режим вождения: скрывает вкладки строительства, меню и панель действий (минимум элементов на экране).
+func set_driving(on: bool) -> void:
+	_driving = on
+	if on:
+		hide_actions()
+		_settings_panel.visible = false
+		if _selected_tab >= 0:
+			select_tab(_selected_tab)
+	_apply_mode(mode)
+
+
+func is_driving() -> bool:
+	return _driving
+
+
+## Масштаб dp и отступы безопасной зоны — для экрана вождения.
+func ui_scale() -> float:
+	return _dp
+
+
+func safe_insets() -> Dictionary:
+	return _safe()
+
+
+func tab_list() -> ScrollContainer:
+	return _tab_list
+
+
+## Сколько строк займёт ряд кнопок шириной widths при переносе в avail_w (чистая функция, тестируется).
+static func flow_rows(widths: Array, avail_w: float, hgap: float) -> int:
+	var rows := 1
+	var x := 0.0
+	for w in widths:
+		var ww: float = minf(w, avail_w)
+		if x > 0.0 and x + hgap + ww > avail_w:
+			rows += 1
+			x = 0.0
+		x += (hgap if x > 0.0 else 0.0) + ww
+	return rows if not widths.is_empty() else 0
+
+
+## Высота списка вкладки: по содержимому, но не больше доступной; дальше — прокрутка.
+func fit_tab_list() -> void:
+	if _tab_list == null:
+		return
+	var widths: Array = []
+	for c in _tab_items.get_children():
+		widths.append((c as Control).get_combined_minimum_size().x)
+	var hg := _tab_items.get_theme_constant("h_separation")
+	var vg := _tab_items.get_theme_constant("v_separation")
+	var rows := flow_rows(widths, _list_avail_w, hg)
+	var row_h := MIN_TOUCH_DP * _dp
+	var need := float(rows) * row_h + float(maxi(rows - 1, 0)) * vg
+	_tab_list.custom_minimum_size.y = minf(need, maxf(_list_max_h, row_h * 2.0))
 
 
 ## Подключает панели жителей к системе (main/тесты).
@@ -348,7 +447,13 @@ func _build() -> void:
 	tab_box.add_child(_tab_title)
 	_tab_items = HFlowContainer.new()
 	_tab_items.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	tab_box.add_child(_tab_items)
+	_tab_items.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tab_list = ScrollContainer.new()
+	_tab_list.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_tab_list.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_tab_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tab_list.add_child(_tab_items)
+	tab_box.add_child(_tab_list)
 	for tb in tool_buttons:
 		_tab_items.add_child(tb)
 	_tab_panel.visible = false
@@ -368,6 +473,31 @@ func _build() -> void:
 	status_label.visible = false
 	for c in [villagers_button, priorities_button, save_button, load_button, settings_button, status_label]:
 		_menu_box.add_child(c)
+
+	_settings_panel = PanelContainer.new()
+	_settings_panel.visible = false
+	add_child(_settings_panel)
+	var sbox := _mk_box(VBoxContainer.new())
+	_settings_panel.add_child(sbox)
+	_settings_title = Label.new()
+	_settings_title.text = "Управление машиной"
+	_settings_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	sbox.add_child(_settings_title)
+	var sflow := HFlowContainer.new()
+	sflow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sbox.add_child(sflow)
+	for sc in ManualDriveDefs.SCHEMES:
+		var sb := _mk_button(ManualDriveDefs.scheme_name(sc), true)
+		sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sb.pressed.connect(_on_scheme_pressed.bind(sc))
+		_scheme_buttons[sc] = sb
+		sflow.add_child(sb)
+	_calib_button = _mk_button("Сбросить калибровку наклона")
+	_calib_button.pressed.connect(_on_calibrate_pressed)
+	sbox.add_child(_calib_button)
+	_settings_close = _mk_button("Закрыть")
+	_settings_close.pressed.connect(func(): _settings_panel.visible = false)
+	sbox.add_child(_settings_close)
 
 	# Ландшафт: нижняя док-панель и всплывающее меню.
 	_dock = _mk_box(VBoxContainer.new())
@@ -414,9 +544,9 @@ func _reparent_to(node: Control, new_parent: Node) -> void:
 func _apply_mode(new_mode: int) -> void:
 	mode = new_mode
 	var land := mode == LayoutMode.Mode.LANDSCAPE
-	menu_button.visible = land
-	fab.visible = not land
-	_dock.visible = land
+	menu_button.visible = land and not _driving
+	fab.visible = not land and not _driving
+	_dock.visible = land and not _driving
 	_menu_popup.visible = false
 	_sheet.visible = false
 	if land:
@@ -515,6 +645,24 @@ func _apply_layout() -> void:
 
 	# Панели жителей: под верхней панелью, над плавающей кнопкой.
 	villagers_ui.apply_layout(_dp, l, tp + touch + 2.0 * edge, r, bt + fs + gap)
+
+	# Панель настроек: по центру, не шире экрана.
+	_set_anchors(_settings_panel, 0.5, 0.5, 0.5, 0.5)
+	_settings_panel.custom_minimum_size.x = minf(vp.x - l - r, 420.0 * _dp)
+	_settings_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_settings_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	for b in _scheme_buttons.values() + [_calib_button, _settings_close]:
+		(b as Control).custom_minimum_size = Vector2(0.0, touch)
+
+	# Список вкладки: ширина и высота, оставшиеся под него (дальше — прокрутка).
+	var fixed := touch + 2.0 * _dp + _tab_title.get_combined_minimum_size().y + 4.0 * gap + 12.0 * _dp
+	if land:
+		_list_avail_w = (_dock.offset_right - _dock.offset_left) - 16.0 * _dp
+		_list_max_h = vp.y - (tp + touch + 2.0 * edge) - bt - fixed
+	else:
+		_list_avail_w = vp.x - l - r - 16.0 * _dp
+		_list_max_h = vp.y - (tp + touch + 2.0 * edge) - (bt + fs + gap) - fixed - _menu_box.get_combined_minimum_size().y - 2.0 * gap
+	fit_tab_list()
 
 
 ## Размер вьюпорта; вне дерева (тесты) — типичный портретный экран.
