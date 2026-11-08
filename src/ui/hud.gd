@@ -509,7 +509,6 @@ func bind_career(career: CareerSystem, sim_in: Simulation) -> void:
 		career_ui.name = "CareerUi"
 		career_ui.on_exit = do_exit_to_menu
 		add_child(career_ui)
-		move_child(career_ui, 0)  # под остальными панелями
 	career_ui.bind(career, sim_in)
 	_apply_layout()
 

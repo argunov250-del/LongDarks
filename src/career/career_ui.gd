@@ -24,7 +24,7 @@ var _lines: Array[Label] = []
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	tracker = PanelContainer.new()
 	tracker.name = "Tracker"
 	tracker.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -43,7 +43,7 @@ func _ready() -> void:
 
 	panel_dim = ColorRect.new()
 	panel_dim.color = Color(0, 0, 0, 0.6)
-	panel_dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	panel_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	panel_dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	panel_dim.visible = false
 	add_child(panel_dim)
@@ -185,7 +185,6 @@ func _fill_tracker(ch: Dictionary) -> void:
 func objective_line(o: Dictionary) -> String:
 	var mark := "[x] " if career.is_done(o) else "[ ] "
 	var t := mark + str(o["text"])
-	var kind := CareerDefs.KINDS[o["type"]]
 	if o["type"] != CareerDefs.T_SURVIVE and o["type"] != CareerDefs.T_RELATION and not career.is_done(o):
 		t += " (%d/%d)" % [roundi(minf(career.progress_of(o), CareerDefs.target(o))), roundi(CareerDefs.target(o))]
 	return t

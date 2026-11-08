@@ -15,12 +15,12 @@ var _data: Dictionary = {}
 
 
 func _init() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	clip_contents = true
 	var bg := ColorRect.new()
 	bg.color = Color(0.03, 0.04, 0.06)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 	column = VBoxContainer.new()
 	column.add_theme_constant_override("separation", 18)
