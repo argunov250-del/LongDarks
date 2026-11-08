@@ -11,11 +11,15 @@ var _failed := 0
 
 
 func _initialize() -> void:
+	_main()  # coroutine: tests may `await` frames (real UI layout)
+
+
+func _main() -> void:
 	var files: Array[String] = []
 	_collect(TEST_ROOT, files)
 	files.sort()
 	for path in files:
-		_run_file(path)
+		await _run_file(path)
 	print("")
 	print("Tests: %d, passed: %d, failed: %d" % [_total, _total - _failed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -47,7 +51,7 @@ func _run_file(path: String) -> void:
 		_total += 1
 		if inst.has_method("_reset"):
 			inst._reset()
-		inst.call(name)
+		await inst.call(name)
 		var errors: Array = inst.errors if "errors" in inst else []
 		if errors.is_empty():
 			print("PASS  %s::%s" % [path, name])

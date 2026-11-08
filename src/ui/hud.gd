@@ -149,6 +149,7 @@ func select_tab(index: int) -> void:
 		tab_buttons[i].set_pressed_no_signal(i == _selected_tab)
 	tools_tab.set_pressed_no_signal(_selected_tab == TOOLS_TAB)
 	_tab_panel.visible = _selected_tab >= 0
+	_menu_box.visible = not (mode == LayoutMode.Mode.PORTRAIT and _selected_tab >= 0)  # портрет: лист не вмещает меню и список
 	if _selected_tab >= 0:
 		_tab_title.text = TOOLS_TITLE if _selected_tab == TOOLS_TAB else TABS[_selected_tab]
 		_fill_tab_items(_selected_tab)
@@ -543,6 +544,7 @@ func _reparent_to(node: Control, new_parent: Node) -> void:
 
 func _apply_mode(new_mode: int) -> void:
 	mode = new_mode
+	_menu_box.visible = not (mode == LayoutMode.Mode.PORTRAIT and _selected_tab >= 0)
 	var land := mode == LayoutMode.Mode.LANDSCAPE
 	menu_button.visible = land and not _driving
 	fab.visible = not land and not _driving
@@ -661,7 +663,7 @@ func _apply_layout() -> void:
 		_list_max_h = vp.y - (tp + touch + 2.0 * edge) - bt - fixed
 	else:
 		_list_avail_w = vp.x - l - r - 16.0 * _dp
-		_list_max_h = vp.y - (tp + touch + 2.0 * edge) - (bt + fs + gap) - fixed - _menu_box.get_combined_minimum_size().y - 2.0 * gap
+		_list_max_h = vp.y - (tp + touch + 2.0 * edge) - (bt + fs + gap) - fixed - 2.0 * gap
 	fit_tab_list()
 
 
