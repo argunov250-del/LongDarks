@@ -35,3 +35,11 @@ godot --headless --path . -s tests/run_tests.gd
 Настроен пресет `Android` (`export_presets.cfg`, пакет `com.longdarks.game`, arm64).
 Нужны шаблоны экспорта и Android SDK; debug keystore задаётся в настройках редактора,
 секреты в репозиторий не коммитятся. Пример CI-сборки — `.github/workflows/ci.yml`.
+
+### Debug keystore и versionCode
+
+`android/debug.keystore` — общий debug-ключ (alias `androiddebugkey`, пароли `android`),
+закоммичен намеренно: CI подписывает им каждую сборку, поэтому новый APK ставится поверх
+старого. Это публичный debug-ключ, НЕ для релиза в Google Play; релизный ключ позже
+будет храниться в GitHub Secrets. В CI `version/code` в `export_presets.cfg` подставляется
+из `GITHUB_RUN_NUMBER` (только внутри job, в репозитории остаётся 1).
