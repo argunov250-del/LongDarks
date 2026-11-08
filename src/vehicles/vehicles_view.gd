@@ -60,6 +60,23 @@ func _sync_vehicles() -> void:
 		var nd: Node3D = _nodes[id]
 		nd.position = v.pos
 		nd.rotation.y = v.facing
+		_sync_headlights(v, nd)
+
+
+## Headlights (fuel-and-upgrades.md): a spot cone at night on a driven vehicle with the upgrade.
+func _sync_headlights(v: Vehicle, nd: Node3D) -> void:
+	var want := v.has_upgrade(&"headlights") and (v.player_driving or v.driver_id != 0) and vs.is_night()
+	var l := nd.get_node_or_null("Headlights") as SpotLight3D
+	if want and l == null:
+		l = SpotLight3D.new()
+		l.name = "Headlights"
+		l.position = Vector3(0.0, 1.2, 1.5)
+		l.spot_range = 30.0
+		l.spot_angle = 35.0
+		l.light_energy = 3.0
+		nd.add_child(l)
+	elif not want and l != null:
+		l.queue_free()
 
 
 func vehicle_node(id: int) -> Node3D:

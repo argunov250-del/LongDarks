@@ -35,6 +35,9 @@ var _drag_vel := Vector3.ZERO
 var _mouse_pan := false
 var _mouse_rot := false
 
+## Step 21: chase mode (manual driving) — camera behind the vehicle, gestures/keys off.
+var chase := false
+
 var save_system := CameraSave.new(self)
 
 
@@ -78,6 +81,28 @@ static func camera_position(pivot: Vector3, yaw: float, dist: float, map: WorldM
 	if map != null:
 		pos.y = maxf(pos.y, map.height_at(pos.x, pos.z) + TERRAIN_CLEARANCE)
 	return pos
+
+
+## Chase camera target for a vehicle: pivot ahead of it, yaw behind it, close distance.
+static func chase_target(pos: Vector3, facing: float) -> Dictionary:
+	return {"pivot": pos + Vector3(sin(facing), 0.0, cos(facing)) * ManualDriveDefs.CHASE_AHEAD,
+		"yaw": facing + PI, "dist": ManualDriveDefs.CHASE_DISTANCE}
+
+
+func set_chase(on: bool) -> void:
+	chase = on
+	_touches.clear()
+	_fling = Vector3.ZERO
+	_mouse_pan = false
+	_mouse_rot = false
+
+
+## Call every frame while chasing: moves the (smoothed) target behind the vehicle.
+func chase_follow(pos: Vector3, facing: float) -> void:
+	var t := chase_target(pos, facing)
+	target_pivot = _clamped(t["pivot"])
+	target_yaw = t["yaw"]
+	target_distance = clamp_distance(t["dist"])
 
 
 # ---------- состояние ----------
@@ -144,7 +169,7 @@ func update(dt: float) -> void:
 		_fling *= exp(-FLING_DECAY * dt)
 	elif _touches.is_empty() and not _mouse_pan:
 		_fling = Vector3.ZERO
-	var k := 1.0 - exp(-SMOOTHING * dt)
+	var k := 1.0 - exp(-(ManualDriveDefs.CHASE_SMOOTHING if chase else SMOOTHING) * dt)
 	_pivot = _pivot.lerp(target_pivot, k)
 	_yaw = lerp_angle(_yaw, target_yaw, k)
 	_distance = lerpf(_distance, target_distance, k)
@@ -175,6 +200,8 @@ func _process(dt: float) -> void:
 
 
 func _keyboard(dt: float) -> void:
+	if chase:
+		return
 	var mv := Vector2.ZERO
 	if Input.is_key_pressed(KEY_A): mv.x -= 1
 	if Input.is_key_pressed(KEY_D): mv.x += 1
@@ -195,6 +222,8 @@ func _keyboard(dt: float) -> void:
 # ---------- ввод ----------
 
 func _unhandled_input(event: InputEvent) -> void:
+	if chase:
+		return
 	if event is InputEventScreenTouch:
 		var t := event as InputEventScreenTouch
 		if t.pressed:

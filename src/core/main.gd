@@ -24,6 +24,8 @@ var villagers: VillagerSystem
 var villagers_view: VillagersView
 var buildings_view: BuildingsView
 var build_controller: BuildController
+var drive: ManualDriveController
+var drive_settings: DriveSettings
 
 
 func _ready() -> void:
@@ -126,4 +128,12 @@ func _ready() -> void:
 	build_controller.food = food
 	build_controller.restoration = restoration
 	build_controller.vehicles = vehicles
+	drive_settings = DriveSettings.new()
+	drive_settings.load()
+	$UI/HUD.drive_settings = drive_settings
+	drive = ManualDriveController.new()
+	drive.name = "ManualDrive"
+	add_child(drive)
+	drive.setup(vehicles, rig, $UI/HUD, drive_settings)
+	build_controller.drive = drive
 	print("LongDarks: main scene ready, world %dx%d, terrain verts %d" % [world_map.size, world_map.size, world_view.terrain_vertex_count])

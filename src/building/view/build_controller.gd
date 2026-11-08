@@ -49,6 +49,7 @@ var plant_mode := false          # шаг 17: кисть «Посадить ле
 var road_mode := false           # шаг 18: кисть «Дорога»
 var vehicles: VehicleSystem
 var selected_vehicle := -1
+var drive: ManualDriveController   # step 21: manual driving
 var veh_menu: StringName = &""          # step 20 submenu: &"" | convert | upgrade
 var heal_mode := false           # шаг 17: кисть «Лечить землю»
 var restoration: RestorationSystem
@@ -537,7 +538,7 @@ func _show_info() -> void:
 			hud.show_actions(vehicle_card_text(sv), vehicle_mod_actions(sv), vehicle_card_tint(sv))
 			return
 		var ws := vehicles.fuelx.workshop_id() >= 0
-		hud.show_actions(vehicle_card_text(sv), [[&"veh_driver", "Водитель", true], [&"veh_repair", "В ремонт", sv.needs_repair()], [&"veh_convert", "Переделать…", ws and not vehicles.fuelx.is_busy(sv)], [&"veh_upgrade", "Доработать…", ws and not vehicles.fuelx.is_busy(sv)], [&"close", "Закрыть", true]], vehicle_card_tint(sv))
+		hud.show_actions(vehicle_card_text(sv), [[&"veh_drive", "Сесть за руль", drive != null and vehicles.is_drivable(sv) and not sv.player_driving], [&"veh_driver", "Водитель", true], [&"veh_repair", "В ремонт", sv.needs_repair()], [&"veh_convert", "Переделать…", ws and not vehicles.fuelx.is_busy(sv)], [&"veh_upgrade", "Доработать…", ws and not vehicles.fuelx.is_busy(sv)], [&"close", "Закрыть", true]], vehicle_card_tint(sv))
 		return
 	if selected_villager >= 0:
 		var v := villagers.get_villager(selected_villager) if villagers != null else null
@@ -711,6 +712,12 @@ func on_action(id: StringName) -> void:
 		_show_info()
 		return
 	match id:
+		&"veh_drive":
+			if drive != null and selected_vehicle >= 0:
+				if drive.try_take(selected_vehicle) == "":
+					clear_selection()
+				else:
+					_show_info()
 		&"veh_driver":
 			if vehicles != null and selected_vehicle >= 0:
 				_cycle_driver(vehicles.get_vehicle(selected_vehicle))
