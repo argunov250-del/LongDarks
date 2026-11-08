@@ -23,6 +23,9 @@ var world: WorldMap
 var enabled := true
 var neighbours: Array = []     # Array of Dictionary (состояние соседей)
 var parties: Array = []        # идущие отряды: караваны, торговцы, помощь, налётчики
+## Сложность (шаг 25, GameSettings): множитель агрессивности и частоты краж/налётов.
+var aggression_scale := 1.0
+var incident_scale := 1.0
 var attract_override := -1.0   # тесты: >= 0 подменяет привлекательность посёлка
 var rng := RandomNumberGenerator.new()
 
@@ -226,7 +229,7 @@ func _social_day(n: Dictionary, d: float) -> void:
 		base -= NeighbourDefs.DESPERATION_PULL
 	n["relation"] = clampf(float(n["relation"]) + (base - float(n["relation"])) * NeighbourDefs.DRIFT_PER_DAY * d, -1.0, 1.0)
 	if rng.randf() < NeighbourDefs.EVENT_CHANCE * d:
-		add_relation(n, NeighbourDefs.EVENT_GOOD if rng.randf() < 0.5 + float(n["baseline"]) else -NeighbourDefs.EVENT_BAD * (0.5 + float(n["aggression"])))
+		add_relation(n, NeighbourDefs.EVENT_GOOD if rng.randf() < 0.5 + float(n["baseline"]) else -NeighbourDefs.EVENT_BAD * (0.5 + float(n["aggression"]) * aggression_scale))
 	# пакт и дань
 	if float(n["pact_left"]) > 0.0:
 		n["pact_left"] = float(n["pact_left"]) - d
@@ -253,10 +256,10 @@ func _social_day(n: Dictionary, d: float) -> void:
 	var host := hostility(n)
 	if host > 0.0 and int(n["pop"]) > 0 and economy != null and float(n["pact_left"]) <= 0.0:
 		var tf := tribute_factor(n)
-		if float(n["cd_theft"]) <= 0.0 and rng.randf() < NeighbourDefs.THEFT_BASE * host * (1.0 + float(n["greed"])) * tf * d:
+		if float(n["cd_theft"]) <= 0.0 and rng.randf() < NeighbourDefs.THEFT_BASE * host * (1.0 + float(n["greed"])) * tf * d * incident_scale:
 			resolve_theft(n)
 		if float(n["relation"]) < NeighbourDefs.RAID_REL_MAX and float(n["cd_raid"]) <= 0.0 and int(n["pop"]) >= NeighbourDefs.RAID_MIN_POP \
-				and rng.randf() < NeighbourDefs.RAID_BASE * host * (0.5 + float(n["aggression"])) * tf * d:
+				and rng.randf() < NeighbourDefs.RAID_BASE * host * (0.5 + float(n["aggression"]) * aggression_scale) * tf * d * incident_scale:
 			n["cd_raid"] = NeighbourDefs.RAID_COOLDOWN_DAYS
 			_spawn_party(n, &"raid", {}, &"")
 			_emit(TOPIC_RAID_SEEN, {"nid": n["id"], "name": n["name"]})

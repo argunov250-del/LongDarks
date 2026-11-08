@@ -38,13 +38,14 @@ static func migrate(data: Dictionary, from_version: int) -> Dictionary:
 	return {}
 
 
-static func save(sim: Simulation, slot_name: String) -> Error:
+## meta — необязательные метаданные слота (имя, время, сезон, день, население): шаг 25.
+static func save(sim: Simulation, slot_name: String, meta: Dictionary = {}) -> Error:
 	if not is_valid_slot_name(slot_name):
 		return ERR_INVALID_PARAMETER
 	var err := DirAccess.make_dir_recursive_absolute(SAVE_DIR)
 	if err != OK:
 		return err
-	var text := JSON.stringify({"version": VERSION, "sim": sim.to_dict()})
+	var text := JSON.stringify({"version": VERSION, "meta": meta, "sim": sim.to_dict()})
 	var path := slot_path(slot_name)
 	var tmp := path + ".tmp"
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
@@ -109,3 +110,46 @@ static func delete_slot(slot_name: String) -> Error:
 	if not FileAccess.file_exists(path):
 		return ERR_FILE_NOT_FOUND
 	return DirAccess.remove_absolute(path)
+
+
+## Метаданные слота: {slot, name, saved_at, season, day, population, ...}; "corrupt": true для битого файла.
+static func slot_info(slot_name: String) -> Dictionary:
+	var info := {"slot": slot_name, "name": slot_name, "saved_at": 0, "season": "", "day": 0, "population": 0, "corrupt": false}
+	var path := slot_path(slot_name)
+	if not FileAccess.file_exists(path):
+		info["corrupt"] = true
+		return info
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		info["corrupt"] = true
+		return info
+	var json := JSON.new()
+	var ok: bool = json.parse(f.get_as_text()) == OK and json.data is Dictionary and json.data.has("sim")
+	f.close()
+	if not ok:
+		info["corrupt"] = true
+		return info
+	info["saved_at"] = int(FileAccess.get_modified_time(path))
+	if json.data.get("meta") is Dictionary:
+		for k in json.data["meta"]:
+			info[k] = json.data["meta"][k]
+	info["slot"] = slot_name
+	return info
+
+
+## Все слоты, новые первыми.
+static func list_infos() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for s in list_slots():
+		out.append(slot_info(s))
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return SaveManager.to_int(a["saved_at"]) > SaveManager.to_int(b["saved_at"]) or (SaveManager.to_int(a["saved_at"]) == SaveManager.to_int(b["saved_at"]) and String(a["slot"]) < String(b["slot"])))
+	return out
+
+
+## Самый свежий читаемый слот ("" — нет).
+static func latest_slot() -> String:
+	for i in list_infos():
+		if not i["corrupt"]:
+			return i["slot"]
+	return ""

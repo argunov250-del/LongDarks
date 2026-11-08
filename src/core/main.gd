@@ -30,9 +30,12 @@ var buildings_view: BuildingsView
 var build_controller: BuildController
 var drive: ManualDriveController
 var drive_settings: DriveSettings
+var settings: GameSettings
+var session: GameSession
 
 
 func _ready() -> void:
+	var pend := SimRunner.take_pending()
 	world_map = WorldMap.new(DEFAULT_WORLD_SEED)
 	SimRunner.sim.register_system(world_map)
 	seasons = SeasonSystem.new()
@@ -88,6 +91,14 @@ func _ready() -> void:
 	SimRunner.sim.register_system(neighbours)
 	neighbours.attach(SimRunner.sim)
 	neighbours.bind(villagers, economy, construction, seasons, social, vehicles, world_map)
+	settings = GameSettings.new()  # step 25 (design/gdd/modes-difficulty.md)
+	if pend.get("settings") is Dictionary:
+		settings.from_dict(pend["settings"])
+	settings.bind(seasons, weather, neighbours)
+	SimRunner.sim.register_system(settings)
+	settings.apply()
+	session = GameSession.new(SimRunner.sim, settings, seasons, villagers)
+	$UI/HUD.bind_session(session)
 	world_view = WorldView.new()
 	world_view.name = "World"
 	add_child(world_view)
@@ -161,4 +172,11 @@ func _ready() -> void:
 	add_child(drive)
 	drive.setup(vehicles, rig, $UI/HUD, drive_settings)
 	build_controller.drive = drive
+	if pend.get("load_slot") is String and session.load_slot(pend["load_slot"]) != OK:
+		push_warning("LongDarks: cannot load slot %s" % pend["load_slot"])
 	print("LongDarks: main scene ready, world %dx%d, terrain verts %d" % [world_map.size, world_map.size, world_view.terrain_vertex_count])
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_PAUSED and session != null:
+		session.autosave.on_app_paused()

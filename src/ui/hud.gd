@@ -297,13 +297,72 @@ func is_actions_visible() -> bool:
 	return _bar.visible
 
 
+## Шаг 25 (design/gdd/modes-difficulty.md): именованные слоты через GameSession.
+var session: GameSession
+var slots_view: SlotsView
+var exit_button: Button
+var exit_starter: Callable = Callable()   # тесты: подмена выхода в меню
+
+
+func bind_session(s: GameSession) -> void:
+	session = s
+
+
 func do_save() -> void:
-	_set_status("Сохранено" if SimRunner.quick_save() == OK else "Ошибка сохранения")
+	if session == null:
+		_set_status("Сохранено" if SimRunner.quick_save() == OK else "Ошибка сохранения")
+		return
+	_open_slots("save")
 
 
 func do_load() -> void:
-	_set_status("Загружено" if SimRunner.quick_load() == OK else "Нет сохранения")
+	if session == null:
+		_set_status("Загружено" if SimRunner.quick_load() == OK else "Нет сохранения")
+		_refresh_clock(true)
+		return
+	_open_slots("load")
+
+
+func _open_slots(mode: String) -> void:
+	_close_slots()
+	_menu_popup.visible = false
+	slots_view = SlotsView.new()
+	slots_view.setup(mode)
+	slots_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var m := _safe()
+	slots_view.offset_left = float(m["left"]) + 8.0
+	slots_view.offset_top = float(m["top"]) + 8.0
+	slots_view.offset_right = -(float(m["right"]) + 8.0)
+	slots_view.offset_bottom = -(float(m["bottom"]) + 8.0)
+	slots_view.closed.connect(_close_slots)
+	slots_view.save_requested.connect(_on_slot_save)
+	slots_view.slot_chosen.connect(_on_slot_load)
+	add_child(slots_view)
+
+
+func _close_slots() -> void:
+	if slots_view != null:
+		slots_view.queue_free()
+		slots_view = null
+
+
+func _on_slot_save(slot: String, display_name: String) -> void:
+	_set_status("Сохранено" if session.save(slot, display_name) == OK else "Ошибка сохранения")
+	_close_slots()
+
+
+func _on_slot_load(slot: String) -> void:
+	_set_status("Загружено" if session.load_slot(slot) == OK else "Ошибка загрузки")
 	_refresh_clock(true)
+	_close_slots()
+
+
+func do_exit_to_menu() -> void:
+	if exit_starter.is_valid():
+		exit_starter.call()
+		return
+	SimRunner.reset()
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
 
 ## Настройки: панель «Управление машиной» (Джойстик / Наклон / Кнопки), хранится в user://settings.cfg.
@@ -569,6 +628,8 @@ func _build() -> void:
 	load_button.pressed.connect(do_load)
 	settings_button = _mk_button("Настройки")
 	settings_button.pressed.connect(do_settings)
+	exit_button = _mk_button("В меню")
+	exit_button.pressed.connect(do_exit_to_menu)
 	villagers_button = _mk_button("Жители")
 	villagers_button.pressed.connect(show_villagers_panel.bind(VillagersUi.MODE_VILLAGERS))
 	neighbours_button = _mk_button("Соседи")
@@ -578,7 +639,7 @@ func _build() -> void:
 	status_label = Label.new()
 	status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	status_label.visible = false
-	for c in [villagers_button, neighbours_button, priorities_button, save_button, load_button, settings_button, status_label]:
+	for c in [villagers_button, neighbours_button, priorities_button, save_button, load_button, settings_button, exit_button, status_label]:
 		_menu_box.add_child(c)
 
 	_settings_panel = PanelContainer.new()
@@ -701,7 +762,7 @@ func _apply_layout() -> void:
 	var gap := roundi(6.0 * _dp)
 	for c in [_top_row, _tabs_row, _dock, _menu_box, _sheet_box]:
 		c.add_theme_constant_override("separation", gap)
-	for b in tab_buttons + tool_buttons + [tools_tab, menu_button, save_button, load_button, settings_button, villagers_button, priorities_button]:
+	for b in tab_buttons + tool_buttons + [tools_tab, menu_button, save_button, load_button, settings_button, exit_button, villagers_button, priorities_button]:
 		b.custom_minimum_size = Vector2(0.0, touch)
 	for b in speed_buttons:
 		b.custom_minimum_size = Vector2(touch if land else touch * 0.85, touch)
