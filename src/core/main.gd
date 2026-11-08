@@ -32,6 +32,7 @@ var drive: ManualDriveController
 var drive_settings: DriveSettings
 var settings: GameSettings
 var session: GameSession
+var career: CareerSystem
 
 
 func _ready() -> void:
@@ -97,8 +98,15 @@ func _ready() -> void:
 	settings.bind(seasons, weather, neighbours)
 	SimRunner.sim.register_system(settings)
 	settings.apply()
+	career = CareerSystem.new()  # step 26 (design/gdd/career.md); inactive outside career mode
+	SimRunner.sim.register_system(career)
+	career.attach(SimRunner.sim)
+	career.bind(villagers, seasons, economy, neighbours)
+	if settings.mode == ModeDefs.CAREER and not pend.get("load_slot") is String:
+		career.start_new()
 	session = GameSession.new(SimRunner.sim, settings, seasons, villagers)
 	$UI/HUD.bind_session(session)
+	$UI/HUD.bind_career(career, SimRunner.sim)
 	world_view = WorldView.new()
 	world_view.name = "World"
 	add_child(world_view)

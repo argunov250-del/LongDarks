@@ -499,6 +499,21 @@ func bind_neighbours(system: NeighbourSystem, sim_in: Simulation) -> void:
 	sim_in.bus.subscribe(NeighbourSystem.TOPIC_PACT_BROKEN, func(p: Dictionary) -> void: t.call("Пакт разорван: %s" % p.get("name", "?")))
 
 
+## Шаг 26 (design/gdd/career.md): трекер целей, панели глав и титры. Вне карьеры невидимы.
+var career_ui: CareerUi
+
+
+func bind_career(career: CareerSystem, sim_in: Simulation) -> void:
+	if career_ui == null:
+		career_ui = CareerUi.new()
+		career_ui.name = "CareerUi"
+		career_ui.on_exit = do_exit_to_menu
+		add_child(career_ui)
+		move_child(career_ui, 0)  # под остальными панелями
+	career_ui.bind(career, sim_in)
+	_apply_layout()
+
+
 func show_neighbours_panel() -> void:
 	villagers_ui.hide_panel()
 	neighbours_ui.show_panel()
@@ -830,6 +845,8 @@ func _apply_layout() -> void:
 	# Панели жителей: под верхней панелью, над плавающей кнопкой.
 	villagers_ui.apply_layout(_dp, l, tp + touch + 2.0 * edge, r, bt + fs + gap)
 	neighbours_ui.apply_layout(_dp, l, tp + touch + 2.0 * edge, r, bt + fs + gap)
+	if career_ui != null:
+		career_ui.apply_layout(_dp, l, tp + touch + 2.0 * edge, r, vp)
 
 	# Панель настроек: по центру, не шире экрана.
 	_set_anchors(_settings_panel, 0.5, 0.5, 0.5, 0.5)

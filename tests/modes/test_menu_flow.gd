@@ -24,7 +24,7 @@ func test_menu_flow_fits_all_resolutions() -> void:
 				assert_true(c.get_global_rect().size.x <= size.x + 0.5, "%s width fits %s" % [page, str(size)])
 				assert_true(c.get_global_rect().position.x >= -0.5, "%s left edge %s" % [page, str(size)])
 				assert_true(host != null and m.scroll.get_global_rect().encloses(r.grow(-0.5)) or true)
-	assert_true(m.career_button.disabled, "career disabled until step 26")
+	assert_false(m.career_button.disabled, "career enabled (step 26)")
 	m.show_page(&"mode")
 	m._on_pick_mode(ModeDefs.SANDBOX)
 	assert_eq(m.current_page(), &"difficulty")

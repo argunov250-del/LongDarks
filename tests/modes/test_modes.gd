@@ -24,7 +24,7 @@ func test_presets_map_to_knobs() -> void:
 	assert_eq(g2.preset, ModeDefs.CUSTOM, "tweaking a knob makes the preset custom")
 	g2.set_winter_mult(99.0)
 	assert_almost_eq(g2.winter_mult, ModeDefs.WINTER_MULT_RANGE.y, 0.0001, "clamped")
-	assert_false(g2.set_mode(ModeDefs.CAREER), "career disabled until step 26")
+	assert_true(g2.set_mode(ModeDefs.CAREER), "career enabled (step 26)")
 	assert_true(g2.set_mode(ModeDefs.SANDBOX))
 
 

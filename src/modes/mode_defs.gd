@@ -4,10 +4,10 @@ extends RefCounted
 
 const SANDBOX := &"sandbox"
 const CAREER := &"career"
-## ХУК карьеры (шаг 26): включить enabled и подключить сюжет.
+## Карьера (шаг 26): каркас глав, design/gdd/career.md.
 const MODES := {
 	SANDBOX: {"name": "Песочница", "enabled": true, "desc": "Без сюжета, бесконечная игра"},
-	CAREER: {"name": "Карьера", "enabled": false, "desc": "Скоро"},
+	CAREER: {"name": "Карьера", "enabled": true, "desc": "4 главы с заданиями, в конце титры"},
 }
 const MODE_ORDER: Array[StringName] = [SANDBOX, CAREER]
 

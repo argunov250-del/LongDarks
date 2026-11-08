@@ -4,6 +4,7 @@ extends SimSystem
 ## stock, mushrooms. Pure simulation: villagers fetch jobs via jobs() and call finish().
 
 const TOPIC_CHANGED := &"food_changed"
+const TOPIC_HARVESTED := &"crop_harvested"  # {res, n} — урожай собран (карьера, шаг 26)
 enum Stage { DESIGNATED, PLOWED, SOWN, RIPE }
 
 var world: WorldMap
@@ -495,6 +496,8 @@ func finish(kind: StringName, target: int) -> Dictionary:
 				f["stage"] = Stage.DESIGNATED
 				f["growth"] = 0.0
 				_emit_changed()
+				if _sim != null:
+					_sim.bus.emit(TOPIC_HARVESTED, {"res": crop, "n": n})
 				return {"res": crop, "n": n}
 			_emit_changed()
 		&"hunt":

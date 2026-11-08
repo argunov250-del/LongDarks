@@ -120,8 +120,9 @@ func _build_mode(parent: Control) -> void:
 	var p := _page(&"mode", parent, "Режим игры")
 	sandbox_button = _btn("Песочница", p, _on_pick_mode.bind(ModeDefs.SANDBOX))
 	_lbl(String(ModeDefs.MODES[ModeDefs.SANDBOX]["desc"]), p, 22)
-	career_button = _btn("Карьера — скоро", p)
-	career_button.disabled = not ModeDefs.MODES[ModeDefs.CAREER]["enabled"]  # ХУК шага 26
+	career_button = _btn("Карьера", p, _on_pick_mode.bind(ModeDefs.CAREER))
+	career_button.disabled = not ModeDefs.MODES[ModeDefs.CAREER]["enabled"]
+	_lbl(String(ModeDefs.MODES[ModeDefs.CAREER]["desc"]), p, 22)
 	_btn("Назад", p, show_page.bind(&"main"))
 
 
