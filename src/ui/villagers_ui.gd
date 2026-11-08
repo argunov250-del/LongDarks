@@ -16,6 +16,7 @@ const BAD_COLOR := "#ef6f6f"
 
 var vs: VillagerSystem
 var social: SocialSystem
+var family: FamilySystem
 var mode: StringName = MODE_NONE
 var toast_panel: PanelContainer
 var toast_label: Label
@@ -88,6 +89,15 @@ func bind_social(system: SocialSystem, sim: Simulation) -> void:
 		sim.bus.subscribe(SocialSystem.TOPIC_HOLIDAY_STARTED, func(p: Dictionary) -> void: show_toast("Начался праздник: %s" % p.get("name", "?")))
 
 
+## Шаг 23: свадьба, рождение ребёнка, ребёнок вырос; семья в списке жителей.
+func bind_family(system: FamilySystem, sim: Simulation) -> void:
+	family = system
+	if sim != null:
+		sim.bus.subscribe(FamilySystem.TOPIC_WEDDING, func(p: Dictionary) -> void: show_toast("Свадьба: %s и %s" % [p.get("a_name", "?"), p.get("b_name", "?")]))
+		sim.bus.subscribe(FamilySystem.TOPIC_BORN, func(p: Dictionary) -> void: show_toast("Родился ребёнок: %s (мать — %s)" % [p.get("name", "?"), p.get("mother_name", "?")]))
+		sim.bus.subscribe(FamilySystem.TOPIC_GREW, func(p: Dictionary) -> void: show_toast("Ребёнок вырос: %s, %s" % [p.get("name", "?"), VillagerDefs.profession_name(p.get("profession", &""))]))
+
+
 func _on_arrived(p: Dictionary) -> void:
 	show_toast("Прибыл новичок: %s, %s" % [p.get("name", "?"), VillagerDefs.profession_name(p.get("profession", &""))])
 
@@ -100,7 +110,7 @@ func _on_recovered(p: Dictionary) -> void:
 	show_toast("Выздоровел: %s" % p.get("name", "?"))
 
 
-const DEATH_CAUSES := {&"sickness": "от болезни", &"food": "от голода", &"water": "от жажды", &"warmth": "от холода", &"rest": "от изнеможения"}
+const DEATH_CAUSES := {&"sickness": "от болезни", &"food": "от голода", &"water": "от жажды", &"warmth": "от холода", &"rest": "от изнеможения", &"old_age": "от старости"}
 
 
 func _on_died(p: Dictionary) -> void:
@@ -197,7 +207,7 @@ func _refresh_villagers() -> void:
 	for id in _rows:
 		var v: Villager = vs.villagers[id]
 		var info: RichTextLabel = _rows[id]["info"]
-		var txt := "[b]%s[/b]%s — %s\n%s\n%s" % [v.display_name, " (герой)" if v.is_hero else "", v.profession_name(), traits_bbcode(v), vs.task_text(v)]
+		var txt := "[b]%s[/b]%s — %s\n%s\n%s" % [v.display_name, " (герой)" if v.is_hero else "", v.profession_name() if not v.is_minor() else FamilyDefs.stage_label(v), traits_bbcode(v), vs.task_text(v)]
 		if social != null:
 			txt += "\nНастроение: " + social.mood_word(v)
 		var warn := NeedsDefs.warning_text(v.needs, v.sick)

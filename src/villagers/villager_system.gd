@@ -37,6 +37,7 @@ var weather: WeatherSystem                # погода: пожар, павод
 var household: HouseholdSystem          # запасы домов и столовых, огороды, сараи (шаг 10b)
 var food: FoodSystem                    # поля, теплицы, охота, рыбалка, грибы (шаг 16), null — нет
 var vehicles: VehicleSystem               # step 18: vehicles, roads, footpaths; null — none
+var family: FamilySystem                # семья и дети (шаг 23, design/gdd/families.md); null — нет
 var needs: NeedsSystem                  # потребности, расселение, болезни (шаг 11)
 var social: SocialSystem                # психика, дружба, праздники (шаг 22, design/gdd/mental-needs.md); null — нет
 ## Потребности и ночной сон включены (тесты старых шагов отключают).
@@ -384,6 +385,8 @@ func needs_multiplier(v: Villager) -> float:
 	var m := NeedsDefs.rate_multiplier(v.needs)
 	if social != null:
 		m *= social.work_multiplier(v)  # шаг 22: плохое настроение замедляет работу
+	if family != null:
+		m *= family.work_multiplier(v)  # шаг 23: подросток вполсилы, пожилой медленнее
 	return m
 
 
@@ -569,6 +572,8 @@ func _pick(v: Villager, use_claims: bool) -> Dictionary:
 			continue
 		if job["kind"] == &"treat" and not needs.can_treat(v):
 			continue
+		if v.is_minor() and family != null and not family.may_work(v, job):
+			continue  # шаг 23: дети не работают, подростки — только по хозяйству
 		if job["kind"] == &"drive":
 			var only: int = job.get("only", 0)
 			if (only != 0 and only != v.id) or not vehicles.can_drive(v, vehicles.get_vehicle(job["target"])):
@@ -692,7 +697,7 @@ func _task_pos(v: Villager, t: Dictionary) -> Variant:
 			if mb == null:
 				return null
 			return household.door_pos(mb) if t["dest"] == &"home" else mb.position
-		&"sleep", &"warm", &"shelter":
+		&"sleep", &"warm", &"shelter", &"play":
 			if t["target"] == 0:
 				return v.pos
 			var hb := construction.get_building(t["target"])
@@ -700,10 +705,10 @@ func _task_pos(v: Villager, t: Dictionary) -> Variant:
 		&"heal", &"treat":
 			var hosp := construction.get_building(t["target"])
 			return hosp.position if hosp != null else null
-		&"talk":
+		&"talk", &"care":
 			var tp := get_villager(t["target"])
 			return tp.pos if tp != null else null
-		&"club", &"bath":
+		&"club", &"bath", &"school":
 			var sb := construction.get_building(t["target"])
 			return sb.position if sb != null else null
 		&"party":
@@ -733,14 +738,14 @@ func _task_radius(t: Dictionary) -> float:
 				return NeedsDefs.HOME_REACH_RADIUS
 			var cb := construction.get_building(t["target"])
 			return _building_radius(cb) if cb != null else 1.0
-		&"sleep", &"warm", &"shelter":
+		&"sleep", &"warm", &"shelter", &"play":
 			return NeedsDefs.HOME_REACH_RADIUS
 		&"heal", &"treat":
 			var hb := construction.get_building(t["target"])
 			return _building_radius(hb) if hb != null else 1.0
-		&"talk":
+		&"talk", &"care":
 			return SocialDefs.TALK_RADIUS * 0.8
-		&"club", &"bath":
+		&"club", &"bath", &"school":
 			var sb := construction.get_building(t["target"])
 			return _building_radius(sb) if sb != null else 1.0
 		&"party":
@@ -877,7 +882,7 @@ func _alive(t: Dictionary) -> bool:
 		return vehicles != null and vehicles.is_drivable(vehicles.get_vehicle(t["target"]))
 	if t["kind"] == &"arrive":
 		return true
-	if t["kind"] == &"talk":
+	if t["kind"] == &"talk" or t["kind"] == &"care":
 		return villagers.has(t["target"])
 	if t["kind"] == &"party" or t["kind"] == &"leave":
 		return social != null
@@ -1068,8 +1073,8 @@ func _work(v: Villager, t: Dictionary, dt: float) -> void:
 			_work_meal(v, t, dt)
 		&"sleep", &"warm", &"heal", &"treat", &"shelter":
 			pass  # восстановление и лечение — в NeedsSystem.tick, пока житель на месте
-		&"talk", &"club", &"party":
-			pass  # эффекты психики — в SocialSystem.tick, пока житель на месте
+		&"talk", &"club", &"party", &"school", &"play", &"care":
+			pass  # эффекты психики и семьи — в SocialSystem/FamilySystem.tick, пока житель на месте
 		&"bath":
 			t["work"] += dt
 			if t["work"] >= SocialDefs.BATH_TIME and social != null:
@@ -1392,6 +1397,13 @@ func task_text(v: Villager) -> String:
 		&"talk":
 			var tv2 := get_villager(t["target"])
 			txt = "Разговаривает с " + (tv2.display_name if tv2 != null else "?")
+		&"school":
+			txt = "Учится в школе"
+		&"play":
+			txt = "Лежит в люльке у дома" if v.stage == &"infant" else "Играет во дворе"
+		&"care":
+			var cv := get_villager(t["target"])
+			txt = "Присматривает за " + (cv.display_name if cv != null else "ребёнком")
 		&"club":
 			txt = "Слушает музыку в клубе"
 		&"bath":

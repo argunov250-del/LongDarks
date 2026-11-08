@@ -28,6 +28,7 @@ const REASON_TEXT := {
 var con: ConstructionSystem
 var production: ProductionSystem  # опционально (main выставляет после setup)
 var villagers: VillagerSystem     # опционально: тап по жителю открывает карточку
+var family: FamilySystem          # шаг 23: семья, дети (раздел карточки)
 var social: SocialSystem          # шаг 22: психика (карточка жителя, праздник из клуба)
 var villagers_view: VillagersView # опционально: подсветка выбранного
 var camera: Camera3D
@@ -526,6 +527,32 @@ func villager_card_text(v: Villager) -> String:
 	return t
 
 
+## Карточка жителя по разделам (вкладки): Основное / Потребности / Семья и друзья.
+func villager_card_sections(v: Villager) -> Array:
+	var traits: Array[String] = []
+	for t in v.traits:
+		traits.append(TraitDefs.display_name(t))
+	var main := "%s%s\n%s, %s, %s" % [v.display_name, " (герой)" if v.is_hero else "", FamilyDefs.stage_label(v) if v.is_minor() else v.profession_name(), VillagerDefs.sex_label(v.sex), VillagerDefs.age_text(v.age)]
+	main += "\nЧерты: " + ", ".join(traits)
+	main += "\nСейчас: " + villagers.task_text(v)
+	main += "\nЖильё: " + _home_name(v)
+	main += "\n" + v.backstory
+	var warn := NeedsDefs.warning_text(v.needs, v.sick)
+	var nd := "Потребности:" + (" " + warn if warn != "" else "") + "\n" + NeedsDefs.card_lines(v.needs)
+	if social != null:
+		nd += "\nНастроение: %s (%d%%)" % [social.mood_word(v), roundi(social.mood(v) * 100.0)]
+		if social.is_leaving(v.id):
+			nd += "\n⚠ собирается уйти из посёлка"
+		nd += "\n" + social.mental_card_lines(v)
+	nd += "\nНавыки:\n" + SkillDefs.card_lines(v.skills)
+	var fam := ""
+	if family != null:
+		fam = family.card_text(v)
+	if social != null:
+		fam += ("\n" if fam != "" else "") + "Друзья: " + social.friends_text(v)
+	return [["Основное", main], ["Потребности", nd], ["Семья и друзья", fam]]
+
+
 func _home_name(v: Villager) -> String:
 	var b := con.get_building(v.home_id) if v.home_id > 0 else null
 	return "бездомный" if b == null else BuildingDefs.display_name(b.type)
@@ -548,7 +575,7 @@ func _show_info() -> void:
 		if v == null:
 			clear_selection()
 			return
-		hud.show_actions(villager_card_text(v), [[&"close", "Закрыть", true]])
+		hud.show_actions("", [[&"close", "Закрыть", true]], Color(0, 0, 0, 0), villager_card_sections(v))
 	elif selected_building >= 0:
 		var b := con.get_building(selected_building)
 		if b == null:

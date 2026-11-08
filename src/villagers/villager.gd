@@ -24,7 +24,15 @@ var sick := false
 var home_id: int = 0                # здание-жильё, 0 — бездомный (расселяет VillagerSystem.assign_homes)
 var bad_water_days := 0.0          # шаг 17: сколько суток ещё повышен шанс заболеть (плохая вода)
 var sick_acc := 0.0                 # накопление до следующего броска на болезнь
+var stage: StringName = &"adult"    # FamilyDefs: infant | child | teen | adult (шаг 23)
+var growth := 0.0                   # несовершеннолетний: возраст в «годах» (игр. сутки), только пока stage != adult
+var age_acc := 0.0                  # взрослый: суток с последнего дня рождения
 var banned: Dictionary = {}         # key -> время, до которого цель недоступна (не сохраняется)
+
+
+## Несовершеннолетний (младенец, ребёнок, подросток): не работает на общих основаниях.
+func is_minor() -> bool:
+	return stage != &"adult"
 
 
 func can_die() -> bool:
@@ -101,6 +109,7 @@ func to_dict() -> Dictionary:
 		"hero": is_hero, "immortal": immortal, "arriving": arriving,
 		"pos": [pos.x, pos.y, pos.z], "facing": facing, "task": tk, "think_cd": think_cd,
 		"at_site": at_site, "needs": nd, "sick": sick, "home_id": home_id, "sick_acc": sick_acc,
+		"stage": String(stage), "growth": growth, "age_acc": age_acc,
 	}
 
 
@@ -135,6 +144,10 @@ static func from_dict(d: Dictionary) -> Villager:
 	v.sick = bool(d.get("sick", false))
 	v.home_id = SaveManager.to_int(d.get("home_id"), 0)
 	v.sick_acc = float(d.get("sick_acc", 0.0))
+	var stg := StringName(String(d.get("stage", "adult")))
+	v.stage = stg if [&"infant", &"child", &"teen"].has(stg) else &"adult"
+	v.growth = maxf(0.0, float(d.get("growth", 0.0)))
+	v.age_acc = maxf(0.0, float(d.get("age_acc", 0.0)))
 	var p = d.get("pos")
 	if p is Array and p.size() == 3:
 		v.pos = Vector3(float(p[0]), float(p[1]), float(p[2]))

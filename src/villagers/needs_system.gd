@@ -31,7 +31,7 @@ func day_seconds() -> float:
 
 
 static func is_need_kind(kind: StringName) -> bool:
-	return KINDS.has(kind) or SocialSystem.is_social_kind(kind)  # шаг 22: общение, клуб, баня, праздник, уход
+	return KINDS.has(kind) or SocialSystem.is_social_kind(kind) or FamilyDefs.is_family_kind(kind)  # шаг 22: общение, клуб, баня, праздник, уход
 
 
 # ---------- жильё ----------
@@ -184,11 +184,14 @@ func _tick_one(v: Villager, dt: float, days: float, staff: Dictionary) -> void:
 	var treated: bool = kind == &"heal" and v.at_site and staff.has(target)
 	# убыль и восполнение
 	var slow := NeedsDefs.SLEEP_DECAY_MULT if resting else 1.0
-	v.set_need(NeedsDefs.FOOD, v.need(NeedsDefs.FOOD) - NeedsDefs.FOOD_DECAY_PER_DAY * NeedsDefs.cold_factor(NeedsDefs.FOOD, cold) * mult * slow * days)
-	v.set_need(NeedsDefs.WATER, v.need(NeedsDefs.WATER) - NeedsDefs.WATER_DECAY_PER_DAY * mult * hs.water_decay_multiplier * slow * days)
+	var cm := vs.family.consumption_mult(v) if vs.family != null else 1.0  # шаг 23: дети едят меньше
+	v.set_need(NeedsDefs.FOOD, v.need(NeedsDefs.FOOD) - NeedsDefs.FOOD_DECAY_PER_DAY * NeedsDefs.cold_factor(NeedsDefs.FOOD, cold) * mult * slow * cm * days)
+	v.set_need(NeedsDefs.WATER, v.need(NeedsDefs.WATER) - NeedsDefs.WATER_DECAY_PER_DAY * mult * hs.water_decay_multiplier * slow * cm * days)
 	var amb := ambient_warmth(v)
 	var w := v.need(NeedsDefs.WARMTH)
 	var wrate := NeedsDefs.WARMTH_RATE_PER_DAY * (NeedsDefs.cold_factor(NeedsDefs.WARMTH, cold) * mult if amb < w else 1.0)
+	if vs.family != null and amb < w:
+		wrate *= vs.family.warmth_mult(v)  # малыши мёрзнут быстрее
 	var exposed := (hs.exposure_warmth_mult > 1.0 or hs.exposure_health_drain > 0.0) and not indoors(v)
 	if exposed and amb < w:
 		wrate *= hs.exposure_warmth_mult
@@ -318,6 +321,10 @@ func job_for(v: Villager) -> Dictionary:
 	if v.home_id > 0 and (v.need(NeedsDefs.WARMTH) < NeedsDefs.WARM_BELOW or (cur == &"warm" and v.need(NeedsDefs.WARMTH) < NeedsDefs.WARM_DONE)):
 		if hs.house_warmth(v.home_id) > v.need(NeedsDefs.WARMTH) + 0.1:
 			return _job(&"warm", v.home_id, &"home")
+	if vs.family != null:
+		var fj2 := vs.family.job_for(v, cur)  # шаг 23: школа, двор, забота о детях
+		if not fj2.is_empty():
+			return fj2
 	if vs.social != null:
 		return vs.social.job_for(v, cur)  # шаг 22: праздник, клуб, баня, разговор
 	return {}

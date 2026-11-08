@@ -16,6 +16,7 @@ const TOPIC_HOLIDAY_ENDED := &"holiday_ended"       # {id, name}
 const KINDS: Array[StringName] = [&"talk", &"club", &"bath", &"party", &"leave"]
 
 var vs: VillagerSystem
+var family: FamilySystem             # шаг 23: горе по близким влияет на настроение (null — нет)
 var seasons: SeasonSystem            # null — календарных праздников нет
 var enabled := true
 ## ХУК шага 24: вызывается, когда житель ушёл (Callable(payload: Dictionary)); пусто — просто исчезает.
@@ -103,6 +104,8 @@ func mood(v: Villager) -> float:
 	for n in SocialDefs.NEEDS:
 		m += float(SocialDefs.MOOD_WEIGHTS[n]) * float(s[n])
 	m -= SocialDefs.PHYSICAL_WEIGHT * vs.suffering(v)
+	if family != null:
+		m -= family.grief_penalty(v)
 	return clampf(m, 0.0, 1.0)
 
 
@@ -357,7 +360,7 @@ func _quarrel_pass() -> void:
 	ids.sort()
 	for id in ids:
 		var v: Villager = vs.villagers.get(id)
-		if v == null or v.is_hero or not _active(v) or float(st(v)["quarrel_cd"]) > 0.0:
+		if v == null or v.is_hero or v.is_minor() or not _active(v) or float(st(v)["quarrel_cd"]) > 0.0:
 			continue
 		var m := mood(v)
 		if m >= SocialDefs.QUARREL_MOOD_BELOW:
@@ -374,7 +377,7 @@ func _nearest_other(v: Villager, radius: float, no_hero: bool) -> Villager:
 	var best: Villager = null
 	var bd := radius
 	for o: Villager in vs.villagers.values():
-		if o == v or not _active(o) or (no_hero and o.is_hero):
+		if o == v or not _active(o) or o.is_minor() or (no_hero and o.is_hero):
 			continue
 		var d := Vector2(o.pos.x - v.pos.x, o.pos.z - v.pos.z).length()
 		if d <= bd:
@@ -395,7 +398,7 @@ func quarrel(a: Villager, b: Villager) -> void:
 # ---------- уход ----------
 
 func _may_leave(v: Villager) -> bool:
-	return v.can_die() and not v.is_hero and not _leaving.has(v.id) and not v.arriving
+	return v.can_die() and not v.is_hero and not v.is_minor() and not _leaving.has(v.id) and not v.arriving
 
 
 func is_leaving(id: int) -> bool:
@@ -652,7 +655,7 @@ func _talk_partner(v: Villager, keep: int) -> Villager:
 	var best: Villager = null
 	var bs := -INF
 	for o: Villager in vs.villagers.values():
-		if o == v or not _active(o) or friendship(v.id, o.id) <= SocialDefs.HOSTILE_AT:
+		if o == v or not _active(o) or o.is_minor() or friendship(v.id, o.id) <= SocialDefs.HOSTILE_AT:
 			continue
 		if o.task.get("kind", &"") == &"sleep" and o.at_site:
 			continue

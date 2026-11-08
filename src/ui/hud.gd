@@ -67,6 +67,12 @@ var _settings_close: Button
 var _driving := false
 var _bar: PanelContainer          # панель действий под верхней панелью
 var _bar_label: Label
+var _bar_box: VBoxContainer
+var _bar_scroll: ScrollContainer   # длинный текст карточки прокручивается и не вылезает за экран
+var _bar_tabs: HFlowContainer      # разделы карточки (Основное / Потребности / ...)
+var _bar_tab_buttons: Array[Button] = []
+var _sections: Array = []          # [[название, текст], ...]; пусто — обычный заголовок
+var _card_tab := 0
 var _bar_row: HFlowContainer
 var _bar_ids: Array = []
 var _bar_buttons: Array[Button] = []
@@ -186,8 +192,10 @@ func _on_build_item(id: StringName) -> void:
 
 ## Панель действий: заголовок + кнопки [id, текст, включена]. Если набор id не
 ## изменился, обновляются только тексты/состояния (нажатие не прерывается).
-func show_actions(title: String, actions: Array, tint: Color = Color(0, 0, 0, 0)) -> void:
-	_bar_label.text = title
+## sections — необязательные разделы карточки [[название, текст], ...] (вкладки); тогда title не используется.
+func show_actions(title: String, actions: Array, tint: Color = Color(0, 0, 0, 0), sections: Array = []) -> void:
+	_set_sections(sections)
+	_bar_label.text = title if sections.is_empty() else String(sections[clampi(_card_tab, 0, sections.size() - 1)][1])
 	if tint.a > 0.0:
 		_bar_label.add_theme_color_override("font_color", tint)
 	else:
@@ -212,6 +220,70 @@ func show_actions(title: String, actions: Array, tint: Color = Color(0, 0, 0, 0)
 		_bar_buttons[i].text = actions[i][1]
 		_bar_buttons[i].disabled = not actions[i][2]
 	_bar.visible = true
+	_fit_bar()
+
+
+## Вкладки карточки: пересоздаются только при смене набора названий.
+func _set_sections(sections: Array) -> void:
+	var names: Array = sections.map(func(s): return s[0])
+	var old: Array = _bar_tab_buttons.map(func(b): return b.text)
+	_sections = sections
+	_bar_tabs.visible = sections.size() > 1
+	if names == old:
+		return
+	for c in _bar_tabs.get_children():
+		_bar_tabs.remove_child(c)
+		c.queue_free()
+	_bar_tab_buttons.clear()
+	_card_tab = 0
+	if sections.size() <= 1:
+		return
+	for i in sections.size():
+		var b := _mk_button(String(sections[i][0]))
+		b.toggle_mode = true
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.custom_minimum_size = Vector2(0.0, MIN_TOUCH_DP * _dp)
+		b.pressed.connect(select_card_tab.bind(i))
+		_bar_tabs.add_child(b)
+		_bar_tab_buttons.append(b)
+
+
+func select_card_tab(i: int) -> void:
+	if _sections.is_empty():
+		return
+	_card_tab = clampi(i, 0, _sections.size() - 1)
+	_bar_label.text = String(_sections[_card_tab][1])
+	_bar_scroll.scroll_vertical = 0
+	_fit_bar()
+
+
+func card_tab() -> int:
+	return _card_tab
+
+
+## Высота прокручиваемого текста: по содержимому, но так, чтобы панель не доходила до нижней док-панели
+## (ландшафт) или нижнего листа и плавающей кнопки (портрет) и не вылезала за экран.
+func _fit_bar() -> void:
+	if _bar_scroll == null or _top_bar == null:
+		return
+	for i in _bar_tab_buttons.size():
+		_bar_tab_buttons[i].button_pressed = i == _card_tab
+	var vp := _vp_size()
+	var touch := MIN_TOUCH_DP * _dp
+	var gap := 6.0 * _dp
+	var bt: float = _safe()["bottom"] + 8.0 * _dp
+	var limit := vp.y - bt
+	if mode == LayoutMode.Mode.LANDSCAPE:
+		if _dock.visible:
+			limit -= maxf(_dock.size.y, _dock.get_combined_minimum_size().y) + gap
+	else:
+		limit -= touch * 1.3 + gap
+		if _sheet.visible:
+			limit -= maxf(_sheet.size.y, _sheet.get_combined_minimum_size().y) + gap
+	var panel_pad := _bar.get_theme_stylebox("panel").get_minimum_size().y if _bar.has_theme_stylebox("panel") else 0.0
+	var others := _bar_box.get_combined_minimum_size().y - _bar_scroll.custom_minimum_size.y + panel_pad
+	var avail := maxf(limit - _bar.offset_top - others, 2.0 * touch)
+	_bar_scroll.custom_minimum_size.y = clampf(_bar_label.get_combined_minimum_size().y, 0.0, avail)
 
 
 func hide_actions() -> void:
@@ -348,6 +420,11 @@ func bind_villagers(system: VillagerSystem) -> void:
 ## Шаг 22: настроение в списке жителей и уведомления психики.
 func bind_social(system: SocialSystem) -> void:
 	villagers_ui.bind_social(system, sim)
+
+
+## Шаг 23: уведомления о свадьбе, рождении и взрослении.
+func bind_family(system: FamilySystem) -> void:
+	villagers_ui.bind_family(system, sim)
 
 
 func show_villagers_panel(panel_mode: StringName) -> void:
@@ -522,11 +599,21 @@ func _build() -> void:
 	_bar.visible = false
 	add_child(_bar)
 	var bar_box := _mk_box(VBoxContainer.new())
+	_bar_box = bar_box
 	_bar.add_child(bar_box)
+	_bar_tabs = HFlowContainer.new()
+	_bar_tabs.visible = false
+	bar_box.add_child(_bar_tabs)
+	_bar_scroll = ScrollContainer.new()
+	_bar_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_bar_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar_box.add_child(_bar_scroll)
 	_bar_label = Label.new()
-	_bar_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bar_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	_bar_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	bar_box.add_child(_bar_label)
+	_bar_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_bar_label.minimum_size_changed.connect(_fit_bar)
+	_bar_scroll.add_child(_bar_label)
 	_bar_row = HFlowContainer.new()
 	_bar_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar_box.add_child(_bar_row)
@@ -632,7 +719,7 @@ func _apply_layout() -> void:
 	_bar.offset_top = tp + touch + 2.0 * edge
 	_bar.offset_bottom = _bar.offset_top
 	_bar.grow_vertical = Control.GROW_DIRECTION_END
-	for b in _bar_buttons:
+	for b in _bar_buttons + _bar_tab_buttons:
 		b.custom_minimum_size = Vector2(0.0, touch)
 	for b in _tab_items.get_children():
 		(b as Control).custom_minimum_size = Vector2(0.0, touch)
@@ -649,6 +736,8 @@ func _apply_layout() -> void:
 	fab.offset_left = -r - fs
 	fab.offset_bottom = -bt
 	fab.offset_top = fab.offset_bottom - fs
+
+	_fit_bar()
 
 	# Панели жителей: под верхней панелью, над плавающей кнопкой.
 	villagers_ui.apply_layout(_dp, l, tp + touch + 2.0 * edge, r, bt + fs + gap)

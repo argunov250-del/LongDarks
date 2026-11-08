@@ -70,6 +70,7 @@ func _sync() -> void:
 func _pose_villager(n: Node3D, v: Villager) -> void:
 	n.position = v.pos
 	n.rotation.y = v.facing
+	n.scale = Vector3.ONE * FamilyDefs.body_scale(v.stage, v.growth)  # дети ниже ростом
 	VillagerAnim.apply(n, VillagerAnim.state_of(v, vs), _t, float(v.id))
 
 

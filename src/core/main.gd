@@ -22,6 +22,7 @@ var construction: ConstructionSystem
 var production: ProductionSystem
 var villagers: VillagerSystem
 var social: SocialSystem
+var family: FamilySystem
 var villagers_view: VillagersView
 var buildings_view: BuildingsView
 var build_controller: BuildController
@@ -77,6 +78,10 @@ func _ready() -> void:
 	SimRunner.sim.register_system(social)
 	social.attach(SimRunner.sim)
 	social.bind(seasons)
+	family = FamilySystem.new(villagers)  # step 23: couples, children, aging (design/gdd/families.md)
+	SimRunner.sim.register_system(family)
+	family.attach(SimRunner.sim)
+	family.bind(social)
 	world_view = WorldView.new()
 	world_view.name = "World"
 	add_child(world_view)
@@ -94,6 +99,7 @@ func _ready() -> void:
 	$UI/HUD.bind_villagers(villagers)
 	$UI/HUD.bind_seasons(seasons)
 	$UI/HUD.bind_social(social)
+	$UI/HUD.bind_family(family)
 	$UI/HUD.bind_weather(SimRunner.sim)
 	$UI/HUD.bind_vehicles(SimRunner.sim)
 	season_visuals = SeasonVisuals.new()
@@ -131,6 +137,7 @@ func _ready() -> void:
 	build_controller.production = production
 	build_controller.villagers = villagers
 	build_controller.social = social
+	build_controller.family = family
 	build_controller.villagers_view = villagers_view
 	build_controller.food = food
 	build_controller.restoration = restoration
