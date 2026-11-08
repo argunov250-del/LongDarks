@@ -43,10 +43,12 @@ var fab: Button              # портрет: плавающая кнопка
 var save_button: Button
 var load_button: Button
 var settings_button: Button
+var neighbours_button: Button
 var villagers_button: Button
 var priorities_button: Button
 var status_label: Label
 var seasons: SeasonSystem      # шаг 13: «Весна, день 3» и температура (null — только «День N»)
+var neighbours_ui: NeighboursUi  # панель «Соседи» (шаг 24)
 var villagers_ui: VillagersUi  # панели «Жители», «Приоритеты», уведомления
 
 var _top_bar: PanelContainer
@@ -423,6 +425,26 @@ func bind_social(system: SocialSystem) -> void:
 
 
 ## Шаг 23: уведомления о свадьбе, рождении и взрослении.
+## Шаг 24: панель «Соседи» и уведомления (design/gdd/neighbours.md).
+func bind_neighbours(system: NeighbourSystem, sim_in: Simulation) -> void:
+	neighbours_ui.bind(system)
+	if sim_in == null:
+		return
+	var t := func(msg: String) -> void: villagers_ui.show_toast(msg)
+	sim_in.bus.subscribe(NeighbourSystem.TOPIC_CARAVAN, func(p: Dictionary) -> void: t.call("Караван пришёл: %s" % p.get("name", "?")))
+	sim_in.bus.subscribe(NeighbourSystem.TOPIC_REQUEST, func(p: Dictionary) -> void: t.call("%s просят помощи" % p.get("name", "?")))
+	sim_in.bus.subscribe(NeighbourSystem.TOPIC_THEFT, func(p: Dictionary) -> void: t.call(("Кража отражена: %s" if p.get("repelled", false) else "Кража со склада: %s") % p.get("name", "?")))
+	sim_in.bus.subscribe(NeighbourSystem.TOPIC_RAID_SEEN, func(p: Dictionary) -> void: t.call("К посёлку идут налётчики: %s" % p.get("name", "?")))
+	sim_in.bus.subscribe(NeighbourSystem.TOPIC_RAID, func(p: Dictionary) -> void: t.call("Нападение отбито" if p.get("repelled", false) else "Нападение: унесли запасы, есть раненые"))
+	sim_in.bus.subscribe(NeighbourSystem.TOPIC_MIGRATE, func(p: Dictionary) -> void: t.call(("Житель ушёл к соседям: %s" if p.get("dir", &"") == &"to_them" else "Пришёл от соседей: %s") % p.get("name", "?")))
+	sim_in.bus.subscribe(NeighbourSystem.TOPIC_PACT_BROKEN, func(p: Dictionary) -> void: t.call("Пакт разорван: %s" % p.get("name", "?")))
+
+
+func show_neighbours_panel() -> void:
+	villagers_ui.hide_panel()
+	neighbours_ui.show_panel()
+
+
 func bind_family(system: FamilySystem) -> void:
 	villagers_ui.bind_family(system, sim)
 
@@ -549,12 +571,14 @@ func _build() -> void:
 	settings_button.pressed.connect(do_settings)
 	villagers_button = _mk_button("Жители")
 	villagers_button.pressed.connect(show_villagers_panel.bind(VillagersUi.MODE_VILLAGERS))
+	neighbours_button = _mk_button("Соседи")
+	neighbours_button.pressed.connect(show_neighbours_panel)
 	priorities_button = _mk_button("Приоритеты")
 	priorities_button.pressed.connect(show_villagers_panel.bind(VillagersUi.MODE_PRIORITIES))
 	status_label = Label.new()
 	status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	status_label.visible = false
-	for c in [villagers_button, priorities_button, save_button, load_button, settings_button, status_label]:
+	for c in [villagers_button, neighbours_button, priorities_button, save_button, load_button, settings_button, status_label]:
 		_menu_box.add_child(c)
 
 	_settings_panel = PanelContainer.new()
@@ -621,6 +645,9 @@ func _build() -> void:
 	villagers_ui.name = "VillagersUi"
 	villagers_ui.villager_pressed.connect(func(id): villager_card_requested.emit(id))
 	add_child(villagers_ui)
+	neighbours_ui = NeighboursUi.new()
+	neighbours_ui.name = "NeighboursUi"
+	add_child(neighbours_ui)
 	fab = _mk_button("☰")
 	fab.pressed.connect(toggle_menu)
 	add_child(fab)
@@ -741,6 +768,7 @@ func _apply_layout() -> void:
 
 	# Панели жителей: под верхней панелью, над плавающей кнопкой.
 	villagers_ui.apply_layout(_dp, l, tp + touch + 2.0 * edge, r, bt + fs + gap)
+	neighbours_ui.apply_layout(_dp, l, tp + touch + 2.0 * edge, r, bt + fs + gap)
 
 	# Панель настроек: по центру, не шире экрана.
 	_set_anchors(_settings_panel, 0.5, 0.5, 0.5, 0.5)

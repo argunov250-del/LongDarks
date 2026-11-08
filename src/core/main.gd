@@ -23,6 +23,8 @@ var production: ProductionSystem
 var villagers: VillagerSystem
 var social: SocialSystem
 var family: FamilySystem
+var neighbours: NeighbourSystem
+var neighbours_view: NeighboursView
 var villagers_view: VillagersView
 var buildings_view: BuildingsView
 var build_controller: BuildController
@@ -82,6 +84,10 @@ func _ready() -> void:
 	SimRunner.sim.register_system(family)
 	family.attach(SimRunner.sim)
 	family.bind(social)
+	neighbours = NeighbourSystem.new(world_map.seed if "seed" in world_map else 1)  # step 24 (design/gdd/neighbours.md)
+	SimRunner.sim.register_system(neighbours)
+	neighbours.attach(SimRunner.sim)
+	neighbours.bind(villagers, economy, construction, seasons, social, vehicles, world_map)
 	world_view = WorldView.new()
 	world_view.name = "World"
 	add_child(world_view)
@@ -100,6 +106,11 @@ func _ready() -> void:
 	$UI/HUD.bind_seasons(seasons)
 	$UI/HUD.bind_social(social)
 	$UI/HUD.bind_family(family)
+	$UI/HUD.bind_neighbours(neighbours, SimRunner.sim)
+	neighbours_view = NeighboursView.new()
+	neighbours_view.name = "NeighboursView"
+	add_child(neighbours_view)
+	neighbours_view.setup(neighbours)
 	$UI/HUD.bind_weather(SimRunner.sim)
 	$UI/HUD.bind_vehicles(SimRunner.sim)
 	season_visuals = SeasonVisuals.new()
